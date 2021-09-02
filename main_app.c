@@ -249,7 +249,7 @@ int main(int argc, char **argv)
 			} else {
 				//do {
 				//printf("test %d %d\n", fds[i].fd, fds[i].revents);
-				//start = clock();
+				start = clock();
 				close_conn = 0;
 				valread = read(fds[i].fd, recvBuff, BUF_LEN);
 				if (valread == -1) {
@@ -317,25 +317,25 @@ int main(int argc, char **argv)
 				else if (!(result = strncmp(quit, method, 4))) {
 					close_conn = 1;
 					printf("quit\n");
-					for (k = 0 ; k < size-2 ; k++) {
-						free(args[k]);
-					}
-					free(method);
-					memset(recvBuff, 0, BUF_LEN);
+					//for (k = 0 ; k < size-2 ; k++) {
+					//	free(args[k]);
+					//}
+					//free(method);
+					//memset(recvBuff, 0, BUF_LEN);
 					//break;
 				} else {
 					send(fds[i].fd, unknown, strlen(unknown), 0);
 					kill(cli_pid, SIGUSR1);
 					//break;
 				}
-				//finish = clock();
-				//cpu_time_used = ((double) (finish - start)) / CLOCKS_PER_SEC;
+				finish = clock();
+				cpu_time_used = ((double) (finish - start)) / CLOCKS_PER_SEC;
 				for (k = 0 ; k < size-2 ; k++) {
 					free(args[k]);
 				}
 				free(method);
 				memset(recvBuff, 0, BUF_LEN);
-				//printf("command took %f seconds\n", cpu_time_used);
+				printf("command took %f seconds\n", cpu_time_used);
 				//} while (1);
 				//printf("test-else %d\n", close_conn);
 				if (close_conn) {
