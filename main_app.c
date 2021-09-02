@@ -65,7 +65,7 @@ int isHostname(char* value);
 int main(int argc, char **argv)
 {
 	if (argc != 3) {
-		fprintf(stderr, "Usage : %s port\n", argv[0]);
+		fprintf(stderr, "Usage : %s [inet | unix] [port | path name]\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 
-		memset(&serv_addr_un, '0', sizeof(serv_addr));
+		memset(&serv_addr_un, '0', sizeof(serv_addr_un));
 		memset(sendBuff, '0', sizeof(sendBuff));
 		memset(recvBuff, '0', sizeof(recvBuff));
 

@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/un.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
@@ -65,7 +66,7 @@ volatile sig_atomic_t gWrite_done = 0;
 int main(int argc, char **argv)
 {
 	
-	if (argc != 3) {
+	if (!(argc > 2 && argc < 5)) {
 		fprintf(stderr, "Usage : %s hostname port\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
@@ -83,6 +84,7 @@ int main(int argc, char **argv)
 
 	pid_t pid;
 	struct sockaddr_in serv_addr;
+	struct sockaddr_un serv_addr_un;
 	struct sigaction sa;
 
 	sa.sa_handler = handle_write; 
@@ -92,25 +94,44 @@ int main(int argc, char **argv)
 		printf("error %d | %s", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+	if (!strcmp(argv[1], "inet")) {	
+		memset(&serv_addr, 0, sizeof(serv_addr));
+		memset(recvBuff, '0', sizeof(recvBuff));
+		memset(sendBuff, '0', sizeof(sendBuff));
 
-	memset(recvBuff, '0', sizeof(recvBuff));
-	memset(sendBuff, '0', sizeof(sendBuff));
+		if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+			printf("failed to create ip socket in cli: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-		printf("failed to create socket in cli: %d | %s \n", errno, strerror(errno));
-		exit(EXIT_FAILURE);
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_addr.s_addr = inet_addr(argv[2]);
+		serv_addr.sin_port = htons(atoi(argv[3]));
+		memset(&(serv_addr.sin_zero), '\0', 8);
+
+		if ((connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) == -1){
+			printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+	} 
+	else if (!strcmp(argv[2], "unix")) {
+		memset(&serv_addr_un, 0, sizeof(serv_addr_un));
+		memset(recvBuff, '0', sizeof(recvBuff));
+		memset(sendBuff, '0', sizeof(sendBuff));
+
+		if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+			printf("failed to create unix socket in cli: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+
+		serv_addr_un.sun_family = AF_UNIX;
+		strcpy(serv_addr_un.sun_path, argv[2]);
+
+		if ((connect(sockfd, (struct sockaddr *) &serv_addr_un, sizeof(serv_addr_un))) == -1){
+			printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	}
-
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
-	serv_addr.sin_port = htons(atoi(argv[2]));
-	memset(&(serv_addr.sin_zero), '\0', 8);
-
-	if ((connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) == -1){
-		printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-
 	dmalloc_debug_setup("log-stats,log-non-free, check-fense, check-heap, error-abort,log=cli_logfile.log");
 
 	pid = getpid();
