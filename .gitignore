@@ -1,0 +1,13 @@
+.history/
+.vscode/
+html/
+latex/
+libxml2/
+*.log
+Matches/
+diagrams/
+vgcore.*
+*.xml
+*.txt
+*.sh
+*.bak
