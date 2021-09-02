@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <dmalloc.h>
@@ -75,6 +76,7 @@ int main(int argc, char **argv)
 	int numrv, structsize = 0;
 	int timeout, nfds = 1, current_size = 0;
 	int END_SERVER = 0, close_conn = 0, compress_array = 0;
+	double cpu_time_used;
 
 	char set[8] = "cli_set";
 	char get[8] = "cli_get";
@@ -88,6 +90,7 @@ int main(int argc, char **argv)
 	char* end;
 	char* docname;
 
+	clock_t start, finish;
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
 	struct sockaddr_in serv_addr, cli_addr;
@@ -246,6 +249,7 @@ int main(int argc, char **argv)
 			} else {
 				//do {
 				//printf("test %d %d\n", fds[i].fd, fds[i].revents);
+				//start = clock();
 				close_conn = 0;
 				valread = read(fds[i].fd, recvBuff, BUF_LEN);
 				if (valread == -1) {
@@ -324,11 +328,14 @@ int main(int argc, char **argv)
 					kill(cli_pid, SIGUSR1);
 					//break;
 				}
+				//finish = clock();
+				//cpu_time_used = ((double) (finish - start)) / CLOCKS_PER_SEC;
 				for (k = 0 ; k < size-2 ; k++) {
 					free(args[k]);
 				}
 				free(method);
 				memset(recvBuff, 0, BUF_LEN);
+				//printf("command took %f seconds\n", cpu_time_used);
 				//} while (1);
 				//printf("test-else %d\n", close_conn);
 				if (close_conn) {
