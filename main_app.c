@@ -20,6 +20,7 @@
 #include <sys/un.h>
 #include <regex.h>
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -35,6 +36,7 @@
 #define BACKLOG 10
 #define MAX_CLIENT 100
 
+void *handle_command(void *args);
 int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int fd);
 void getParameter(char *parameter, xmlNode* a_node, int fd);
 void run_command(char *command[], int fd, int size);
@@ -244,6 +246,10 @@ int main(int argc, char **argv)
 					nfds++;
 				} while(new_conn != -1);
 			} else {
+				pthread_t thread;
+				if (pthread_create(&thread, NULL, handle_command, NULL) == -1) {
+					
+				}
 				//do {
 				//printf("test %d %d\n", fds[i].fd, fds[i].revents);
 				close_conn = 0;
