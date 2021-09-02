@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 		printf("error %d | %s", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	if (!strcmp(argv[1], "inet")) {	
+	if (!strcmp(argv[1], "inet")) {
 		memset(&serv_addr, 0, sizeof(serv_addr));
 		memset(recvBuff, '0', sizeof(recvBuff));
 		memset(sendBuff, '0', sizeof(sendBuff));
