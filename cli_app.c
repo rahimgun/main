@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 	} 
-	else if (!strcmp(argv[2], "unix")) {
+	else if (!strcmp(argv[1], "unix")) {
 		memset(&serv_addr_un, 0, sizeof(serv_addr_un));
 		memset(recvBuff, '0', sizeof(recvBuff));
 		memset(sendBuff, '0', sizeof(sendBuff));

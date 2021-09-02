@@ -160,18 +160,18 @@ int main(int argc, char **argv)
 			printf("socket() failed: %d | %s \n", errno, strerror(errno));
 			exit(EXIT_FAILURE);
 		}
-
+		/*
 		rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
 		if (rc == -1) {
-			printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+			printf("failed to set socket option(unix): %d | %s \n", errno, strerror(errno));
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
-
+		*/
 		rc = ioctl(listenfd, FIONBIO, (char*)&en);
 
 		if (rc == -1) {
-			printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+			printf("failed to set socket to nonblocking(unix): %d | %s \n", errno, strerror(errno));
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
@@ -185,13 +185,13 @@ int main(int argc, char **argv)
 
 
 		if (bind(listenfd, (struct sockaddr*)&serv_addr_un, sizeof(serv_addr_un)) == -1) {
-			printf("failed to bind: %d | %s \n", errno, strerror(errno));
+			printf("failed to bind (unix): %d | %s \n", errno, strerror(errno));
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
 
 		if (listen(listenfd, BACKLOG) == -1) {
-			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+			printf("failed to listen in main(unix): %d | %s \n", errno, strerror(errno));
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
