@@ -17,6 +17,7 @@
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 #include <ctype.h>
+#include <sys/un.h>
 #include <regex.h>
 #include <errno.h>
 #include <signal.h>
@@ -63,7 +64,7 @@ int isHostname(char* value);
  */
 int main(int argc, char **argv)
 {
-	if (argc != 2) {
+	if (argc != 3) {
 		fprintf(stderr, "Usage : %s port\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
@@ -89,7 +90,8 @@ int main(int argc, char **argv)
 
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
-	struct sockaddr_in serv_addr, cli_addr; 
+	struct sockaddr_in serv_addr, cli_addr;
+	struct sockaddr_un serv_addr_un;
 	struct pollfd fds[MAX_CLIENT];
 
 	done = "parameter is set\n";
@@ -109,49 +111,91 @@ int main(int argc, char **argv)
 		xmlFreeDoc(doc);
 		exit(EXIT_FAILURE);
 	}
+	if (!strcmp(argv[1], "inet")) {
+		listenfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (listenfd == -1) {
+			printf("socket() failed: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 
-	listenfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (listenfd == -1) {
-		printf("socket() failed: %d | %s \n", errno, strerror(errno));
-		exit(EXIT_FAILURE);
+		rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
+		if (rc == -1) {
+			printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		rc = ioctl(listenfd, FIONBIO, (char*)&en);
+
+		if (rc == -1) {
+			printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		memset(&serv_addr, '0', sizeof(serv_addr));
+		memset(sendBuff, '0', sizeof(sendBuff));
+		memset(recvBuff, '0', sizeof(recvBuff));
+
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		serv_addr.sin_port = htons(atoi(argv[2]));
+		memset(&(serv_addr.sin_zero), '\0', 8);
+
+		if (bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
+			printf("failed to bind: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		if (listen(listenfd, BACKLOG) == -1) {
+			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
 	}
+	else if (!strcmp(argv[1], "unix")) {
+		listenfd = socket(AF_UNIX, SOCK_STREAM, 0);
+		if (listenfd == -1) {
+			printf("socket() failed: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 
-	rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
-	if (rc == -1) {
-		printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
-		close(listenfd);
-		exit(EXIT_FAILURE);
+		rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
+		if (rc == -1) {
+			printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		rc = ioctl(listenfd, FIONBIO, (char*)&en);
+
+		if (rc == -1) {
+			printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		memset(&serv_addr_un, '0', sizeof(serv_addr));
+		memset(sendBuff, '0', sizeof(sendBuff));
+		memset(recvBuff, '0', sizeof(recvBuff));
+
+		serv_addr_un.sun_family = AF_UNIX;
+		strcpy(serv_addr_un.sun_path, argv[2]);
+
+
+		if (bind(listenfd, (struct sockaddr*)&serv_addr_un, sizeof(serv_addr_un)) == -1) {
+			printf("failed to bind: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+
+		if (listen(listenfd, BACKLOG) == -1) {
+			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
 	}
-
-	rc = ioctl(listenfd, FIONBIO, (char*)&en);
-
-	if (rc == -1) {
-		printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
-		close(listenfd);
-		exit(EXIT_FAILURE);
-	}
-
-	memset(&serv_addr, '0', sizeof(serv_addr));
-	memset(sendBuff, '0', sizeof(sendBuff));
-	memset(recvBuff, '0', sizeof(recvBuff));
-
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	serv_addr.sin_port = htons(atoi(argv[1]));
-	memset(&(serv_addr.sin_zero), '\0', 8);
-
-	if (bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
-		printf("failed to bind: %d | %s \n", errno, strerror(errno));
-		close(listenfd);
-		exit(EXIT_FAILURE);
-	}
-
-	if (listen(listenfd, BACKLOG) == -1) {
-		printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
-		close(listenfd);
-		exit(EXIT_FAILURE);
-	}
-
 	memset(fds, 0, sizeof(fds));
 
 	fds[0].fd = listenfd;
