@@ -14,6 +14,10 @@
 #define STR_LEN 100
 #define BUF_LEN 1024
 
+void handle_write(int signum);
+
+volatile sig_atomic_t gWrite_done = 0;
+
 int main(int argc, char **argv)
 {
 	/*
@@ -35,6 +39,14 @@ int main(int argc, char **argv)
 
 	pid_t pid;
 	struct sockaddr_in serv_addr;
+	struct sigaction sa;
+	sa.sa_handler = handle_write; 
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(SIGUSR1, &sa, NULL) == 1) {
+		printf("error %d | %s", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 
 	memset(recvBuff, '0', sizeof(recvBuff));
 	memset(sendBuff, '0', sizeof(sendBuff));
@@ -87,13 +99,24 @@ int main(int argc, char **argv)
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+	/*
 	valread = read(sockfd, recvBuff, BUF_LEN);
 	if (valread == -1) {
 		printf("failed to read: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	printf("%.*s", valread, recvBuff);
-
+	*/
+	while (!gWrite_done) {
+		valread = read(sockfd, recvBuff, BUF_LEN);
+		if (valread == -1) {
+			if (errno == EINTR) {/* break loop when read is interrupted*/
+				break;
+			}
+		}
+		printf("%.*s", valread, recvBuff);
+		fflush(stdout);
+	}
 	int test;
 	test = send(sockfd, pid_to_send, 1024, 0);
 	if (test == -1) {
@@ -120,4 +143,9 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	return 0;
+}
+
+void handle_write(int signum)
+{
+	gWrite_done = 1;
 }
