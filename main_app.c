@@ -302,6 +302,7 @@ int main(int argc, char **argv)
 				else if (!(result = strncmp(get, method, 7))) {
 					getParameter(args[0], root_element, fds[i].fd);
 					kill(cli_pid, SIGUSR1);
+					
 					//break;
 				}
 				else if (!(result = strncmp(run, method, 7))) {

@@ -9,10 +9,15 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/un.h>
 #include <arpa/inet.h>
 
 #define STR_LEN 100
 #define BUF_LEN 1024
+
+void handle_write(int signum);
+
+volatile sig_atomic_t gWrite_done = 0;
 
 int main(int argc, char **argv)
 {
@@ -34,20 +39,32 @@ int main(int argc, char **argv)
 	char sendBuff[BUF_LEN];
 
 	pid_t pid;
-	struct sockaddr_in serv_addr;
+	struct sockaddr_un serv_addr;
+	struct sigaction sa;
 
+	sa.sa_handler = handle_write; 
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(SIGUSR1, &sa, NULL) == 1) {
+		printf("error %d | %s", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	memset(&serv_addr, '0', sizeof(serv_addr));
 	memset(recvBuff, '0', sizeof(recvBuff));
 	memset(sendBuff, '0', sizeof(sendBuff));
 
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		printf("failed to create socket in cli: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-
+	/*
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
 	serv_addr.sin_port = htons(atoi(argv[2]));
 	memset(&(serv_addr.sin_zero), '\0', 8);
+	*/
+	serv_addr.sun_family = AF_UNIX;
+	strcpy(serv_addr.sun_path, "/tmp/server");
 
 	if ((connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) == -1){
 		printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
@@ -71,7 +88,7 @@ int main(int argc, char **argv)
 	asdzxc[2] = (char *) malloc(STR_LEN);
 	strcpy(asdzxc[0], "3");
 	strcpy(asdzxc[1], "cli_get");
-	strcpy(asdzxc[2], "Device.Time.NTPServer1");
+	strcpy(asdzxc[2], "Device.");
 	asd = send(sockfd, asdzxc[0], BUF_LEN, 0);
 	if (asd == -1) {
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
@@ -87,13 +104,23 @@ int main(int argc, char **argv)
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+	/*
 	valread = read(sockfd, recvBuff, BUF_LEN);
 	if (valread == -1) {
 		printf("failed to read: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	printf("%.*s", valread, recvBuff);
-
+	*/
+	while (!gWrite_done) {
+		valread = read(sockfd, recvBuff, BUF_LEN);
+		if (valread == -1) {
+			if (errno == EINTR) {/* break loop when read is interrupted*/
+				break;
+			}
+		}
+		printf("%.*s", valread, recvBuff);
+	}
 	int test;
 	test = send(sockfd, pid_to_send, 1024, 0);
 	if (test == -1) {
@@ -120,4 +147,9 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	return 0;
+}
+
+void handle_write(int signum)
+{
+	gWrite_done = 1;
 }
