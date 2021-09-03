@@ -3,6 +3,7 @@
 html/
 latex/
 libxml2/
+bin/
 *.log
 Matches/
 diagrams/
