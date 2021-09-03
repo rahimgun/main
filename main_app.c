@@ -65,10 +65,12 @@ int isHostname(char* value);
  */
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
-		fprintf(stderr, "Usage : %s [inet | unix] [port | path name]\n", argv[0]);
+
+	if (!(argc > 2 && argc < 5)) {
+		fprintf(stderr, "Usage : %s [inet | unix ] [hostname port | path name ]\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
+	
 
 	dmalloc_debug_setup("log-stats, log-non-free, check-fense, check-heap, error-abort,log=main_logfile.log");
 	int result = 0, rc, en = 1;
@@ -141,8 +143,8 @@ int main(int argc, char **argv)
 		memset(recvBuff, '0', sizeof(recvBuff));
 
 		serv_addr.sin_family = AF_INET;
-		serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-		serv_addr.sin_port = htons(atoi(argv[2]));
+		serv_addr.sin_addr.s_addr = inet_addr(argv[2]);
+		serv_addr.sin_port = htons(atoi(argv[3]));
 		memset(&(serv_addr.sin_zero), '\0', 8);
 
 		if (bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
