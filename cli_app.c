@@ -72,6 +72,7 @@ int main(int argc, char **argv)
 	}
 	
 	int sockfd = 0, valread = 0;
+	int s;
 
 	char command[BUF_LEN] = {0};
 	char quit[5] = "quit";
@@ -85,6 +86,9 @@ int main(int argc, char **argv)
 	pid_t pid;
 	struct sockaddr_in serv_addr;
 	struct sockaddr_un serv_addr_un;
+	struct sockaddr_storage addr;
+	struct addrinfo hints;
+	struct addrinfo *result, *rp;
 	struct sigaction sa;
 
 	sa.sa_handler = handle_write; 
@@ -94,10 +98,45 @@ int main(int argc, char **argv)
 		printf("error %d | %s", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = 0;
+	hints.ai_protocol = 0;
+
 	if (!strcmp(argv[1], "inet")) {
-		memset(&serv_addr, 0, sizeof(serv_addr));
 		memset(recvBuff, '0', sizeof(recvBuff));
 		memset(sendBuff, '0', sizeof(sendBuff));
+
+		s = getaddrinfo(argv[2], argv[3], &hints, &result);
+		if (s != 0) {
+			printf("getaddrinfo failed %s\n", gai_strerror(s));
+			exit(EXIT_FAILURE);
+		}
+
+		for (rp = result; rp != NULL; rp = rp->ai_next) {
+			sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+			if (sockfd == -1) {
+				continue;
+			}
+
+			if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1) {
+				break;
+			}
+
+			close(sockfd);
+		}
+
+		freeaddrinfo(result);
+
+		if (rp == NULL) {
+			printf("Could not connect\n");
+			exit(EXIT_FAILURE);
+		}
+		/*
+		memset(&serv_addr, 0, sizeof(serv_addr));
 
 		if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 			printf("failed to create ip socket in cli: %d | %s \n", errno, strerror(errno));
@@ -113,6 +152,7 @@ int main(int argc, char **argv)
 			printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
 			exit(EXIT_FAILURE);
 		}
+		*/
 	} 
 	else if (!strcmp(argv[1], "unix")) {
 		memset(&serv_addr_un, 0, sizeof(serv_addr_un));
@@ -167,6 +207,8 @@ int main(int argc, char **argv)
 				printf("failed to send: %d | %s \n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
 			}
+			free(quit[0]);
+			free(quit[1]);
 			break;
 		}
 		send(sockfd, pid_to_send, 1024, 0);
