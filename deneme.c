@@ -77,13 +77,15 @@ int main(int argc, char **argv)
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	char* asdzxc[3];
+	char* asdzxc[4];
 	asdzxc[0] = (char *) malloc(STR_LEN);
 	asdzxc[1] = (char *) malloc(STR_LEN);
 	asdzxc[2] = (char *) malloc(STR_LEN);
-	strcpy(asdzxc[0], "3");
-	strcpy(asdzxc[1], "cli_get");
+	asdzxc[3] = (char *) malloc(STR_LEN);
+	strcpy(asdzxc[0], "4");
+	strcpy(asdzxc[1], "cli_set");
 	strcpy(asdzxc[2], "Device.Time.NTPServer1");
+	strcpy(asdzxc[3], "192.168.1.4");
 	asd = send(sockfd, asdzxc[0], BUF_LEN, 0);
 	if (asd == -1) {
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
@@ -95,6 +97,11 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	asd = send(sockfd, asdzxc[2], BUF_LEN, 0);
+	if (asd == -1) {
+		printf("failed to send: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	asd = send(sockfd, asdzxc[3], BUF_LEN, 0);
 	if (asd == -1) {
 		printf("failed to send: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);

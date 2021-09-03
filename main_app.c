@@ -52,6 +52,8 @@ int isNumber(char* value);
 int isIPAddress(char* value);
 int isHostname(char* value);
 
+pthread_mutex_t mutexsave;
+
 /**
  * @brief calls corresponding functions for methods
  * 
@@ -101,6 +103,8 @@ int main(int argc, char **argv)
 	struct sockaddr_in serv_addr, cli_addr;
 	struct sockaddr_un serv_addr_un;
 	struct pollfd fds[MAX_CLIENT];
+
+	pthread_mutex_init(&mutexsave, NULL);
 
 	done = "parameter is set\n";
 	end = "end of command";
@@ -296,7 +300,7 @@ int main(int argc, char **argv)
 		printf("error closing listenfd: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-
+	pthread_mutex_destroy(&mutexsave);
 	xmlFreeDoc(doc);
 	xmlCleanupParser();
 	dmalloc_shutdown();
@@ -329,6 +333,7 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	xmlChar* type = NULL;
 	char* newValue = NULL;
 	xmlNode* node = a_node;
+	int ret = 0;
 
 	invalid = "type is not valid\n";
 	set = "parameter is set\n";
@@ -362,8 +367,10 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	type = xmlGetProp(node->parent, "type");
 	if (!xmlStrcmp(type, (const xmlChar*) "boolean")) {
 		if (!strcmp("true", value) || !strcmp("false", value)) {
+			pthread_mutex_lock(&mutexsave);
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			pthread_mutex_unlock(&mutexsave);
 			send(fd, set, strlen(set), 0);
 		} else {
 			send(fd, invalid, strlen(invalid), 0);
@@ -371,8 +378,10 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	} 
 	else if (!xmlStrcmp(type, (const xmlChar*) "int")) {
 		if (isNumber(value)) {
+			pthread_mutex_lock(&mutexsave);
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			pthread_mutex_unlock(&mutexsave);
 			send(fd, set, strlen(set), 0);
 		} else {
 			send(fd, invalid, strlen(invalid), 0);
@@ -383,16 +392,28 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 		if (syntax != NULL) {
 			if (!xmlStrcmp(syntax, (const xmlChar*) "IPAddress")) {
 				if (isIPAddress(value) || isHostname(value)){
+					ret = pthread_mutex_lock(&mutexsave);
+					if (ret != 0) {
+						printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
+						exit(EXIT_FAILURE);
+					}
 					xmlNodeSetContent(node, (const xmlChar*) value);
 					xmlSaveFormatFile("./example.xml",doc,1);
+					ret = pthread_mutex_unlock(&mutexsave);
+					if (ret != 0) {
+						printf("failed to set socket to nonblocking(unix): %d | %s \n", errno, strerror(errno));
+						exit(EXIT_FAILURE);
+					} 
 					send(fd, set, strlen(set), 0);
 				} else {
 					send(fd, invalid, strlen(invalid), 0);
 				}
 			}
 		} else {
+			pthread_mutex_lock(&mutexsave);
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			pthread_mutex_unlock(&mutexsave);
 			send(fd, set, strlen(set), 0);
 		}
 		free(syntax);
