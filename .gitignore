@@ -1,6 +1,7 @@
 .history/
 .vscode/
 html/
+bin/
 latex/
 libxml2/
 *.log
