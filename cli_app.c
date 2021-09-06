@@ -87,6 +87,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in serv_addr;
 	struct sockaddr_un serv_addr_un;
 	struct sockaddr_storage addr;
+	struct in6_addr serv;
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
 	struct sigaction sa;
@@ -104,7 +105,17 @@ int main(int argc, char **argv)
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0;
-
+	
+	s = inet_pton(AF_INET, argv[2], &serv);
+	if (s == 1) {
+		printf("valid ipv4\n");
+	}
+	
+	s = inet_pton(AF_INET6, argv[2], &serv);
+	if (s == 1) {
+		printf("valid ipv6\n");
+	}
+	
 	if (!strcmp(argv[1], "inet")) {
 		memset(recvBuff, '0', sizeof(recvBuff));
 		memset(sendBuff, '0', sizeof(sendBuff));
