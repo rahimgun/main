@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 	}
 	
 	int sockfd = 0, valread = 0;
-	int s;
+	int s, rc;
 
 	char command[BUF_LEN] = {0};
 	char quit[5] = "quit";
@@ -105,17 +105,7 @@ int main(int argc, char **argv)
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0;
-	
-	s = inet_pton(AF_INET, argv[2], &serv);
-	if (s == 1) {
-		printf("valid ipv4\n");
-	}
-	
-	s = inet_pton(AF_INET6, argv[2], &serv);
-	if (s == 1) {
-		printf("valid ipv6\n");
-	}
-	
+
 	if (!strcmp(argv[1], "inet")) {
 		memset(recvBuff, '0', sizeof(recvBuff));
 		memset(sendBuff, '0', sizeof(sendBuff));
@@ -132,12 +122,18 @@ int main(int argc, char **argv)
 			if (sockfd == -1) {
 				continue;
 			}
+			
+			rc = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
 
-			if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1) {
+			if (rc == -1) {
+				printf("failed to connect: %d | %s \n", errno, strerror(errno));
+				close(sockfd);
+				exit(EXIT_FAILURE);
+			} else {
 				break;
 			}
 
-			close(sockfd);
+			
 		}
 
 		freeaddrinfo(result);

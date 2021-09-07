@@ -8,6 +8,7 @@
  * 
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <dmalloc.h>
@@ -73,7 +75,7 @@ int main(int argc, char **argv)
 	
 
 	dmalloc_debug_setup("log-stats, log-non-free, check-fense, check-heap, error-abort,log=main_logfile.log");
-	int result = 0, rc, en = 1, s;
+	int result = 0, rc, en = 1, dis = 0, s, family;
 	int listenfd = 0, connfd = 0, valread = 0, new_conn = -1;
 	int numrv, structsize = 0;
 	int timeout, nfds = 1, current_size = 0;
@@ -90,6 +92,7 @@ int main(int argc, char **argv)
 	char sendBuff[BUF_LEN];
 	char recvBuff[BUF_LEN];
 	char client_addr[INET6_ADDRSTRLEN];
+	char host[NI_MAXHOST];
 	char* done;
 	char* end;
 	char* docname;
@@ -103,15 +106,15 @@ int main(int argc, char **argv)
 	struct sockaddr_storage addr;
 	struct addrinfo hints;
 	struct addrinfo *result_addr, *rp;
+	struct ifaddrs *ifaddrs, *ifa;
 	struct pollfd fds[MAX_CLIENT];
 
 	addrlen = sizeof(cli_addr);
 
-	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_CANONNAME;
-	hints.ai_protocol = 0;
+	//hints.ai_family = AF_UNSPEC;
+	//hints.ai_socktype = SOCK_STREAM;
+	//hints.ai_flags = AI_CANONNAME;
+	//hints.ai_protocol = 0;
 
 	done = "parameter is set\n";
 	end = "end of command";
@@ -131,6 +134,62 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	if (!strcmp(argv[1], "inet6")) {
+		
+		memset(&hints, 0, sizeof(struct addrinfo));
+		hints.ai_family = AF_INET6;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_PASSIVE;
+		hints.ai_protocol = 0;
+		s = getaddrinfo(NULL, argv[3], &hints, &result_addr);
+		if (s != 0) {
+			printf("get addr info failed: %s \n", gai_strerror(s));
+			exit(EXIT_FAILURE);
+		}
+		
+		for (rp = result_addr; rp != NULL; rp = rp->ai_next) {
+			
+			listenfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+			if (listenfd == -1) {
+				continue;
+			}
+
+			rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
+			if (rc == -1) {
+				printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+				close(listenfd);
+				exit(EXIT_FAILURE);
+			}
+
+			rc = ioctl(listenfd, FIONBIO, (char*)&en);
+
+			if (rc == -1) {
+				printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+				close(listenfd);
+				exit(EXIT_FAILURE);
+			}
+
+			if (bind(listenfd, rp->ai_addr, rp->ai_addrlen) == 0) {
+				break;
+			}
+
+			close(listenfd);
+		}
+
+		freeaddrinfo(result_addr);
+
+		if (rp == NULL) {
+			printf("Could not bind\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (listen(listenfd, BACKLOG) == -1) {
+			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+		
+		/*
 		listenfd = socket(AF_INET6, SOCK_STREAM, 0);
 
 		if (listenfd == -1) {
@@ -143,7 +202,8 @@ int main(int argc, char **argv)
 		memset(recvBuff, '0', sizeof(recvBuff));
 
 		serv.sin6_family = AF_INET6;
-		serv.sin6_addr = in6addr_any;
+		inet_pton(AF_INET6, argv[2], &serv.sin6_addr);
+		//serv.sin6_addr = in6addr_any;
 		serv.sin6_port = htons(atoi(argv[3]));
 		rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
 		if (rc == -1) {
@@ -170,8 +230,62 @@ int main(int argc, char **argv)
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
+		*/
 	}
 	else if (!strcmp(argv[1], "inet4")) {
+		memset(&hints, 0, sizeof(struct addrinfo));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_PASSIVE;
+		hints.ai_protocol = 0;
+		s = getaddrinfo(NULL, argv[3], &hints, &result_addr);
+		if (s != 0) {
+			printf("get addr info failed: %s \n", gai_strerror(s));
+			exit(EXIT_FAILURE);
+		}
+
+		for (rp = result_addr; rp != NULL; rp = rp->ai_next) {
+			listenfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+			if (listenfd == -1) {
+				continue;
+			}
+
+			rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
+			if (rc == -1) {
+				printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+				close(listenfd);
+				exit(EXIT_FAILURE);
+			}
+
+			rc = ioctl(listenfd, FIONBIO, (char*)&en);
+
+			if (rc == -1) {
+				printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+				close(listenfd);
+				exit(EXIT_FAILURE);
+			}
+
+			if (bind(listenfd, rp->ai_addr, rp->ai_addrlen) == 0) {
+				break;
+			}
+
+			close(listenfd);
+		}
+
+		freeaddrinfo(result_addr);
+
+		if (rp == NULL) {
+			printf("Could not bind\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (listen(listenfd, BACKLOG) == -1) {
+			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+			close(listenfd);
+			exit(EXIT_FAILURE);
+		}
+		/*
 		listenfd = socket(AF_INET, SOCK_STREAM, 0);
 		if (listenfd == -1) {
 			printf("socket() failed: %d | %s \n", errno, strerror(errno));
@@ -213,6 +327,7 @@ int main(int argc, char **argv)
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
+		*/
 	}
 	else if (!strcmp(argv[1], "unix")) {
 		listenfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -256,6 +371,93 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 	}
+	else if (!strcmp(argv[1], "interface")) {
+		memset(&hints, 0, sizeof(struct addrinfo));
+		hints.ai_family = AF_UNSPEC;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = 0;
+		hints.ai_protocol = 0;
+		if (getifaddrs(&ifaddrs) == -1) {
+			printf("failed to get interface addresses: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+
+		for (ifa = ifaddrs; ifa != NULL; ifa=ifa->ifa_next) {
+			if (ifa->ifa_addr == NULL) {
+				continue;
+			}
+
+			if (strcmp(ifa->ifa_name, argv[2])) {
+				continue;
+			}
+
+			family = ifa->ifa_addr->sa_family;
+
+			if (!(family == AF_INET || family == AF_INET6)) {
+				continue;
+			}
+			
+			s = getnameinfo(ifa->ifa_addr, 
+							(family == AF_INET) ? sizeof(struct sockaddr_in) : 
+												sizeof(struct sockaddr_in6),
+												host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+												
+			if (s != 0) {
+				printf("get name info failed: %s\n", gai_strerror(s));
+			}
+			printf("address is = %s\n", host);
+			s = getaddrinfo(host, argv[3], &hints, &result_addr);
+
+			if (s != 0) {
+				printf("get addr info failed: \n", gai_strerror(s));
+			}
+
+			for (rp = result_addr; rp != NULL; rp = rp->ai_next) {
+
+				listenfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+				if (listenfd == -1) {
+					printf("failed to create socket(interface): %d | %s \n", errno, strerror(errno));
+					continue;
+				}
+
+				rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char*)&en, sizeof(en));
+
+				if (rc == -1) {
+					printf("failed to set socket option: %d | %s \n", errno, strerror(errno));
+					close(listenfd);
+					exit(EXIT_FAILURE);
+				}
+
+				rc = ioctl(listenfd, FIONBIO, (char*)&en);
+
+				if (rc == -1) {
+					printf("failed to set socket to nonblocking: %d | %s \n", errno, strerror(errno));
+					close(listenfd);
+					exit(EXIT_FAILURE);
+				}
+
+				rc = bind(listenfd, rp->ai_addr, rp->ai_addrlen);
+				if (rc == -1) {
+					printf("failed to bind(interface): %d | %s \n", errno, strerror(errno));
+					close(listenfd);
+					exit(EXIT_FAILURE);
+				} else {
+					printf("asd\n");
+					break;
+				}
+
+			}
+			if (listen(listenfd, BACKLOG) == -1) {
+				printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
+				close(listenfd);
+				exit(EXIT_FAILURE);
+			}
+			freeaddrinfo(result_addr);
+			break;
+		}
+	}
+	freeifaddrs(ifaddrs);
 	memset(fds, 0, sizeof(fds));
 
 	fds[0].fd = listenfd;
@@ -283,7 +485,7 @@ int main(int argc, char **argv)
 			}
 
 			if (fds[i].revents != POLLIN) {
-				printf("error. revent = %x fd = %d\n", fds[i].revents, fds[i].fd);
+				printf("error. revent = %d fd = %d\n", fds[i].revents, fds[i].fd);
 				END_SERVER = 1;
 				break;
 			}
