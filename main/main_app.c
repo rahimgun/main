@@ -737,9 +737,9 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 			}
 			send(fd, set, strlen(set), 0);
 		}
-		free(syntax);
+		xmlFree(syntax);
 	}
-	free(type);
+	xmlFree(type);
 	return 1;
 }
 /**
@@ -795,7 +795,7 @@ void getParameter(char *parameter, xmlNode* a_node, int fd)
 		if (node->next == NULL) {
 			xmlChar* key = xmlNodeGetContent(node);
 			send(fd, key, xmlStrlen(key), 0);
-			free(key);
+			xmlFree(key);
 
 		} else {
 			print_element_names(node, fd);
@@ -957,7 +957,7 @@ void print_element_names(xmlNode * a_node, int fd)
 				sleep(0.1);
 				//printf("name: %s value = %s\n", cur_node->name, key);
 			}
-			free(key);
+			xmlFree(key);
 		}
 		print_element_names(cur_node->children, fd);
 	}	
