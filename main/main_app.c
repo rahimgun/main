@@ -40,10 +40,15 @@
 #define BACKLOG 10
 #define MAX_CLIENT 100
 
+/**
+ * @struct fd
+ *  
+ * 
+ */
 struct fd {
-	int t_fd;
-	xmlNode* node;
-	xmlDoc* doc;
+	int t_fd; /**< file descriptor of command line*/
+	xmlNode* node; /**< root element of the xml document*/
+	xmlDoc* doc; /**< xml document*/
 };
 
 
@@ -64,17 +69,16 @@ int isHostname(char* value);
 pthread_mutex_t mutexsave;
 
 /**
- * @brief calls corresponding functions for methods
+ * @brief calls corresponding functions for methods.
  * 
  * It performs necessary operations for socket communication and
  * xml document parsing. If xml file doesn't exist or contain nothing
  * terminates the program. Then it sets up IP address with given port number
- * and all local address and starts to listen the port. Firstly it gets
- * pid of CLI to send signal to writing is done. Then it enters an infinity
- * loop. In each loop, it gets one command from CLI. It gets size of command
- * and method name. It creates a string array and puts options to array from 
- * read buffer. Finally it calls function that matches with method name. After function
- * ends sends signal to CLI and starts to wait new command. 
+ * and all local address and starts to listen the port. It creates a poll and 
+ * waits connection requests. When a connection is accepted it is added to poll.
+ * If a client sends a command a new thread is called. When user enters quit
+ * connection is removed from poll. If no client sends a message in 10 minutes 
+ * server is closed.
  * 
  * 
  * @param argc 
@@ -298,7 +302,7 @@ int main(int argc, char **argv)
 }
 
 /**
- * @brief create an IPv6 connection
+ * @brief create an IPv6 connection.
  * 
  * It creates an IPv6 socket. It listens any IPv6 address that also 
  * accepts IPv4 clients.
@@ -370,7 +374,7 @@ int inet6(char* port) {
 }
 
 /**
- * @brief create an IPv4 connection
+ * @brief create an IPv4 connection.
  * 
  * It finds addresses with given host name. It creates an IPv4 socket and bind to 
  * the first address it found.
@@ -443,7 +447,7 @@ int inet4(char* host, char* port)
 	return listenfd;
 }
 /**
- * @brief create a unix domain socket
+ * @brief create a unix domain socket.
  * 
  * It creates a unix socket and a unix socket address struct with given path name.
  * Then it binds socket to address.
@@ -494,7 +498,7 @@ int unix_d(char* file)
 }
 
 /**
- * @brief open socket with an address of given interface
+ * @brief open socket with an address of given interface.
  * 
  * It gets all interfaces and find the given interface. After interface is found
  * it tries to find an IPv4 or IPv6 address. Then it creates a socket and bind it
@@ -603,7 +607,7 @@ int interface(char* interface, char* port)
 }
 
 /**
- * @brief Set the parameter value
+ * @brief Set the parameter value.
  * 
  * It finds the node for given parameter and checks node's type.
  * It validates the value depending on the type. If value is valid
@@ -723,6 +727,14 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 				}
 			}
 		} else {
+			
+			if (!strcmp("", value)) {
+				send(fd, invalid, strlen(invalid), 0);
+				xmlFree(syntax);
+				xmlFree(type);
+				return 0;
+			}
+			
 			ret = pthread_mutex_lock(&mutexsave);
 			if (ret != 0) {
 				printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
@@ -743,7 +755,7 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	return 1;
 }
 /**
- * @brief Get the parameter content from xml
+ * @brief Get the parameter content from xml.
  * 
  * It tokenizes parameter with dot. It searches xml nodes for each token.
  * When it finds a match, it moves to the children node with new token.
@@ -803,7 +815,7 @@ void getParameter(char *parameter, xmlNode* a_node, int fd)
 	}
 }
 /**
- * @brief runs commands
+ * @brief runs commands.
  * 
  * @param command contains command and options
  * @param fd socket fd to write output
@@ -860,7 +872,7 @@ void run_command(char *command[], int fd, int size)
 	}
 }
 /**
- * @brief executing user's shell scripts
+ * @brief executing user's shell scripts.
  * 
  * It executes scripts with execvp. It puts NULL to the end of command list.
  * It creates a pipe to communicate with the script. When this command forks,
@@ -922,7 +934,7 @@ void exec_command(char *command[], int fd, int size)
 	}
 }
 /**
- * @brief printing node contents when partial path is given
+ * @brief printing node contents when partial path is given.
  * 
  * It finds child nodes recursively and print
  * name and content of the node.
@@ -1005,7 +1017,7 @@ int isIPAddress(char* value)
 	return result;
 }
 /**
- * @brief check value if a valid hostname
+ * @brief check value if a valid hostname.
  * 
  * It creates a regex for hostname validation.
  * If compilation of regex is successfull it executes
@@ -1037,7 +1049,20 @@ int isHostname(char *value)
 		return 0;
 	}
 }
-
+/**
+ * @brief get commands from user and call necesarry functions.
+ * 
+ * It gets file descriptor, root element and document from thread argument.
+ * Firstly it gets pid of CLI to send signal to writing is done. Then it gets size of command
+ * and create an array for holding options. After it reads size, it reads method name.
+ *  It continues to read and copy read options to array. Then it calls corresponding function
+ * to method name with the array. After function is ended, it exit with a ret variable which
+ * indicates method was quit or not.
+ * 
+ * 
+ * @param args thread structure
+ * @return void* 
+ */
 void *handle_command(void *args)
 {
 	printf("thread id = %u \n", pthread_self());
@@ -1091,7 +1116,7 @@ void *handle_command(void *args)
 	char* method = (char *) malloc(valread);
 	strncpy(method, recvBuff, valread);
 	memset(recvBuff, 0, BUF_LEN);
-	char* args_t[size - 1];
+	char* args_t[size - 2];
 	printf("method = %s\n", method);
 	for (k = 0 ; k < size - 2; k++) {
 		valread = read(fd, recvBuff, BUF_LEN);
@@ -1106,7 +1131,14 @@ void *handle_command(void *args)
 	}
 	
 	if (!(result = strncmp(set, method, 7))) {
-		setParameter(args_t[0], args_t[1], root_element, doc, fd);
+		
+		if (size - 2 == 2) {
+			setParameter(args_t[0], args_t[1], root_element, doc, fd);
+		} else {
+			setParameter(args_t[0], "", root_element, doc, fd);
+		}
+	
+		//setParameter(args_t[0], args_t[1], root_element, doc, fd);
 		kill(cli_pid, SIGUSR1);
 		//break;
 	}
