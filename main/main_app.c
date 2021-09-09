@@ -27,6 +27,7 @@
 #include <ifaddrs.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 #include <getopt.h>
 #include <dmalloc.h>
 #include <sys/types.h>
@@ -39,6 +40,14 @@
 #define BACKLOG 10
 #define MAX_CLIENT 100
 
+struct fd {
+	int t_fd;
+	xmlNode* node;
+	xmlDoc* doc;
+};
+
+
+void *handle_command(void *args);
 int inet6(char* port);
 int inet4(char* host, char* port);
 int unix_d(char* file);
@@ -51,6 +60,8 @@ void print_element_names(xmlNode* a_node, int fd);
 int isNumber(char* value);
 int isIPAddress(char* value);
 int isHostname(char* value);
+
+pthread_mutex_t mutexsave;
 
 /**
  * @brief calls corresponding functions for methods
@@ -82,28 +93,20 @@ int main(int argc, char **argv)
 	dmalloc_debug_setup("log-stats, log-non-free, check-fense, check-heap, error-abort,log=main_logfile.log");
 	int result = 0, rc = 0;
 	int dflag = 0, pflag = 0, hflag = 0, fflag = 0, iflag = 0;
-	char *dvalue = NULL, *pvalue = NULL, *hvalue = NULL, *fvalue = NULL, *ivalue = NULL;
 	int index, c;
 	int option_index = 0;
-	int listenfd = 0, connfd = 0, valread = 0, new_conn = -1;
-	int numrv, structsize = 0;
+	int listenfd = 0, new_conn = -1;
+	int structsize = 0;
 	int timeout, nfds = 1, current_size = 0;
 	int END_SERVER = 0, close_conn = 0, compress_array = 0;
 	double cpu_time_used;
 
-	char set[8] = "cli_set";
-	char get[8] = "cli_get";
-	char run[8] = "cli_run";
-	char exec[9] = "cli_exec";
-	char quit[5] = "quit";
-	char unknown[16] = "unknown method\n";
 	char sendBuff[BUF_LEN];
 	char recvBuff[BUF_LEN];
 	char client_addr[INET6_ADDRSTRLEN];
 	char host[NI_MAXHOST];
-	char* done;
-	char* end;
 	char* docname;
+	char *dvalue = NULL, *pvalue = NULL, *hvalue = NULL, *fvalue = NULL, *ivalue = NULL;
 
 	clock_t start, finish;
 	xmlDoc *doc = NULL;
@@ -161,8 +164,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	done = "parameter is set\n";
-	end = "end of command";
 	docname = "./example.xml";
 
 	doc = xmlParseFile(docname);
@@ -178,6 +179,8 @@ int main(int argc, char **argv)
 		xmlFreeDoc(doc);
 		exit(EXIT_FAILURE);
 	}
+
+	pthread_mutex_init(&mutexsave, NULL);
 
 	memset(sendBuff, '0', sizeof(sendBuff));
 	memset(recvBuff, '0', sizeof(recvBuff));
@@ -244,116 +247,39 @@ int main(int argc, char **argv)
 					nfds++;
 				} while(new_conn != -1);
 			} else {
-				//do {
-				//printf("test %d %d\n", fds[i].fd, fds[i].revents);
-				start = clock();
-				close_conn = 0;
-				valread = read(fds[i].fd, recvBuff, BUF_LEN);
-				if (valread == -1) {
-					printf("failed to read cli pid: %d | %s \n", errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-				pid_t cli_pid = atoi(recvBuff);
-				memset(recvBuff, 0, BUF_LEN);
-				printf("pid = %d\n", cli_pid);
-				if (cli_pid == -1) {
-					printf("cannot receive pid of cli\n");
-					exit(EXIT_FAILURE);
-				}
-				valread = read(fds[i].fd, recvBuff, BUF_LEN);
-				if (valread == -1) {
-					printf("failed to read size: %d | %s \n", errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-				int k = 0;
-				int size = atoi(recvBuff);
-				memset(recvBuff, 0, BUF_LEN);
-				printf("size = %d\n",size);
-				valread = read(fds[i].fd, recvBuff, BUF_LEN);
-				if (valread == -1) {
-					printf("failed to read method: %d | %s \n", errno, strerror(errno));
-					exit(EXIT_FAILURE);
-				}
-				char* method = (char *) malloc(valread);
-				strncpy(method, recvBuff, valread);
-				memset(recvBuff, 0, BUF_LEN);
-				char* args[size - 1];
-				printf("method = %s\n", method);
-				for (k = 0 ; k < size - 2; k++) {
-					valread = read(fds[i].fd, recvBuff, BUF_LEN);
-					if (valread == -1) {
-						printf("failed to read options:  %d | %s \n", errno, strerror(errno));
+					pthread_t thread;
+					struct fd t_fd;
+					t_fd.t_fd = fds[i].fd;
+					t_fd.node = root_element;
+					t_fd.doc = doc;
+					if (pthread_create(&thread, NULL, handle_command, &t_fd) != 0) {
+						printf("failed to create thread: %d | %s \n", errno, strerror(errno));
 						exit(EXIT_FAILURE);
 					}
-					args[k] = (char *) malloc(valread);
-					strcpy(args[k],recvBuff);
-					memset(recvBuff, 0, BUF_LEN);
-					//printf("args = %s\n",args[k]);
-				}
-				
-				if (!(result = strncmp(set, method, 7))) {
-					setParameter(args[0], args[1], root_element, doc, fds[i].fd);
-					kill(cli_pid, SIGUSR1);
-					//break;
-				}
-				else if (!(result = strncmp(get, method, 7))) {
-					getParameter(args[0], root_element, fds[i].fd);
-					kill(cli_pid, SIGUSR1);
-					
-					//break;
-				}
-				else if (!(result = strncmp(run, method, 7))) {
-					exec_command(args, fds[i].fd, size-2);
-					kill(cli_pid, SIGUSR1);
-					//break;
-				}
-				else if (!(result = strncmp(exec, method, 7))) {
-					exec_command(args, fds[i].fd, size-2);
-					kill(cli_pid, SIGUSR1);
-					//break;
-				} 
-				else if (!(result = strncmp(quit, method, 4))) {
-					close_conn = 1;
-					printf("quit\n");
-					//for (k = 0 ; k < size-2 ; k++) {
-					//	free(args[k]);
-					//}
-					//free(method);
-					//memset(recvBuff, 0, BUF_LEN);
-					//break;
-				} else {
-					send(fds[i].fd, unknown, strlen(unknown), 0);
-					kill(cli_pid, SIGUSR1);
-					//break;
-				}
-				finish = clock();
-				cpu_time_used = ((double) (finish - start)) / CLOCKS_PER_SEC;
-				for (k = 0 ; k < size-2 ; k++) {
-					free(args[k]);
-				}
-				free(method);
-				memset(recvBuff, 0, BUF_LEN);
-				printf("command took %f seconds\n", cpu_time_used);
-				//} while (1);
-				//printf("test-else %d\n", close_conn);
-				if (close_conn) {
-					close(fds[i].fd);
-					fds[i].fd = -1;
-					compress_array = 1;
-				}
-			}
-		}
-		int l, m;
-		if (compress_array) {
-			compress_array = 0;
-			for (l = 0; l < nfds; l++) {
-				if (fds[l].fd == -1) {
-					for(m = l; m < nfds-1; m++) {
-						fds[m].fd = fds[m+1].fd;
+					void *ret;
+					if (pthread_join(thread, &ret) != 0) {
+						printf("failed to join thread: %d | %s \n", errno, strerror(errno));
+						exit(EXIT_FAILURE);
 					}
-					l--;
-					nfds--;
+					
+					if (!strcmp(ret, "yes")) {
+						close(fds[i].fd);
+						fds[i].fd = -1;
+						compress_array = 1;
+					} 
 				}
+			int l, m;
+			if (compress_array) {
+				compress_array = 0;
+				for (l = 0; l < nfds; l++) {
+					if (fds[l].fd == -1) {
+						for(m = l; m < nfds-1; m++) {
+							fds[m].fd = fds[m+1].fd;
+						}
+						l--;
+						nfds--;
+						}
+					}
 			}
 		}
 	} while (END_SERVER == 0);
@@ -364,6 +290,7 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	pthread_mutex_destroy(&mutexsave);
 	xmlFreeDoc(doc);
 	xmlCleanupParser();
 	dmalloc_shutdown();
@@ -692,15 +619,17 @@ int interface(char* interface, char* port)
  */
 int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int fd)
 {
+	int ret = 0;
+
 	char* test = parameter;
 	char* token = NULL;
 	char* temp = NULL;
 	char* invalid = NULL;
 	char* set = NULL;
 	char* notFound = NULL;
+	char* newValue = NULL;
 	xmlChar* key = NULL;
 	xmlChar* type = NULL;
-	char* newValue = NULL;
 	xmlNode* node = a_node;
 
 	invalid = "type is not valid\n";
@@ -735,8 +664,18 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	type = xmlGetProp(node->parent, "type");
 	if (!xmlStrcmp(type, (const xmlChar*) "boolean")) {
 		if (!strcmp("true", value) || !strcmp("false", value)) {
+			ret = pthread_mutex_lock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			ret = pthread_mutex_unlock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to unlock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			send(fd, set, strlen(set), 0);
 		} else {
 			send(fd, invalid, strlen(invalid), 0);
@@ -744,8 +683,18 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 	} 
 	else if (!xmlStrcmp(type, (const xmlChar*) "int")) {
 		if (isNumber(value)) {
+			ret = pthread_mutex_lock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			ret = pthread_mutex_unlock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to unlock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			send(fd, set, strlen(set), 0);
 		} else {
 			send(fd, invalid, strlen(invalid), 0);
@@ -756,16 +705,36 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 		if (syntax != NULL) {
 			if (!xmlStrcmp(syntax, (const xmlChar*) "IPAddress")) {
 				if (isIPAddress(value) || isHostname(value)){
+					ret = pthread_mutex_lock(&mutexsave);
+					if (ret != 0) {
+						printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
+						exit(EXIT_FAILURE);
+					}
 					xmlNodeSetContent(node, (const xmlChar*) value);
 					xmlSaveFormatFile("./example.xml",doc,1);
+					ret = pthread_mutex_unlock(&mutexsave);
+					if (ret != 0) {
+						printf("failed to unlock mutex: %d | %s \n", errno, strerror(errno));
+						exit(EXIT_FAILURE);
+					}
 					send(fd, set, strlen(set), 0);
 				} else {
 					send(fd, invalid, strlen(invalid), 0);
 				}
 			}
 		} else {
+			ret = pthread_mutex_lock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to lock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			xmlNodeSetContent(node, (const xmlChar*) value);
 			xmlSaveFormatFile("./example.xml",doc,1);
+			ret = pthread_mutex_unlock(&mutexsave);
+			if (ret != 0) {
+				printf("failed to unlock mutex: %d | %s \n", errno, strerror(errno));
+				exit(EXIT_FAILURE);
+			}
 			send(fd, set, strlen(set), 0);
 		}
 		free(syntax);
@@ -1067,4 +1036,125 @@ int isHostname(char *value)
 	else if (reti == REG_NOMATCH) {
 		return 0;
 	}
+}
+
+void *handle_command(void *args)
+{
+	printf("thread id = %u \n", pthread_self());
+	struct fd *t_fd = (struct fd*) args;
+	int fd = t_fd->t_fd;
+	int valread;
+	int result;
+	double cpu_time_used;
+
+	xmlDoc* doc = t_fd->doc;
+	xmlNode* root_element = t_fd->node;
+	clock_t start, finish;
+	char *ret;
+	char set[8] = "cli_set";
+	char get[8] = "cli_get";
+	char run[8] = "cli_run";
+	char exec[9] = "cli_exec";
+	char quit[5] = "quit";
+	char unknown[16] = "unknown method\n";
+	char sendBuff[BUF_LEN];
+	char recvBuff[BUF_LEN];
+	ret = (char *) malloc(20);
+	strcpy(ret, "no");
+	start = clock();
+	valread = read(fd, recvBuff, BUF_LEN);
+	if (valread == -1) {
+		printf("failed to read cli pid: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	pid_t cli_pid = atoi(recvBuff);
+	memset(recvBuff, 0, BUF_LEN);
+	printf("pid = %d\n", cli_pid);
+	if (cli_pid == -1) {
+		printf("cannot receive pid of cli\n");
+		exit(EXIT_FAILURE);
+	}
+	valread = read(fd, recvBuff, BUF_LEN);
+	if (valread == -1) {
+		printf("failed to read size: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	int k = 0;
+	int size = atoi(recvBuff);
+	memset(recvBuff, 0, BUF_LEN);
+	printf("size = %d\n",size);
+	valread = read(fd, recvBuff, BUF_LEN);
+	if (valread == -1) {
+		printf("failed to read method: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	char* method = (char *) malloc(valread);
+	strncpy(method, recvBuff, valread);
+	memset(recvBuff, 0, BUF_LEN);
+	char* args_t[size - 1];
+	printf("method = %s\n", method);
+	for (k = 0 ; k < size - 2; k++) {
+		valread = read(fd, recvBuff, BUF_LEN);
+		if (valread == -1) {
+			printf("failed to read options:  %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		args_t[k] = (char *) malloc(valread);
+		strcpy(args_t[k],recvBuff);
+		memset(recvBuff, 0, BUF_LEN);
+		//printf("args = %s\n",args[k]);
+	}
+	
+	if (!(result = strncmp(set, method, 7))) {
+		setParameter(args_t[0], args_t[1], root_element, doc, fd);
+		kill(cli_pid, SIGUSR1);
+		//break;
+	}
+	else if (!(result = strncmp(get, method, 7))) {
+		getParameter(args_t[0], root_element, fd);
+		kill(cli_pid, SIGUSR1);
+		//break;
+	}
+	else if (!(result = strncmp(run, method, 7))) {
+		exec_command(args_t, fd, size-2);
+		kill(cli_pid, SIGUSR1);
+		//break;
+	}
+	else if (!(result = strncmp(exec, method, 7))) {
+		exec_command(args_t, fd, size-2);
+		kill(cli_pid, SIGUSR1);
+		//break;
+	} 
+	else if (!(result = strncmp(quit, method, 4))) {
+		strcpy(ret, "yes");
+		//printf("quit\n");
+		//for (k = 0 ; k < size-2 ; k++) {
+		//	free(args_t[k]);
+		//}
+		//free(method);
+		//memset(recvBuff, 0, BUF_LEN);
+		//break;
+	} else {
+		send(fd, unknown, strlen(unknown), 0);
+		kill(cli_pid, SIGUSR1);
+		//break;
+	}
+	for (k = 0 ; k < size-2 ; k++) {
+		free(args_t[k]);
+	}
+	finish = clock();
+	cpu_time_used = ((double) (finish - start)) / CLOCKS_PER_SEC;
+	printf("command took %f seconds\n", cpu_time_used);
+	free(method);
+	memset(recvBuff, 0, BUF_LEN);
+	//} while (1);
+	//printf("test-else %d\n", close_conn);
+	/*
+	if (close_conn) {
+		close(fds[i].fd);
+		fds[i].fd = -1;
+		compress_array = 1;
+	}
+	*/
+	pthread_exit(ret);
 }
