@@ -1,11 +1,13 @@
 obj-m := lkm_example.o
-default: main
+SUBDIRS=cli main
 
-main : cli main_app.c
-	gcc -g -o bin/main main_app.c `xml2-config --cflags --libs` -ldmallocth
+.PHONY: subdirs $(SUBDIRS)
 
-cli : cli_app.c
-	gcc -g -o bin/cli cli_app.c -ldmallocth
+subdirs: $(SUBDIRS)
+
+$(SUBDIRS):
+	$(MAKE) -C $@
+
 
 module:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules

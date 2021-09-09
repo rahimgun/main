@@ -7,15 +7,18 @@
  * @copyright Copyright (c) 2021
  * 
  */
-
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/un.h>
 #include <string.h>
+#include <ifaddrs.h>
 #include <errno.h>
+#include <getopt.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -25,6 +28,7 @@
 
 #define STR_LEN 100
 #define BUF_LEN 1024
+#define BACKLOG 10
 
 /**
  * @struct params 
@@ -38,6 +42,9 @@ struct params{
 	struct params *next;
 };
 
+int inet(char* host, char* port);
+int unix_d(char* file);
+int interface(char* interface, char* port);
 void insert(char *param, struct params **head);
 void init(char *param, struct params **head);
 void free_list(struct params **head);
@@ -65,14 +72,17 @@ volatile sig_atomic_t gWrite_done = 0;
  */
 int main(int argc, char **argv)
 {
-	
+	/*	
 	if (!(argc > 2 && argc < 5)) {
 		fprintf(stderr, "Usage : %s hostname port\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
-	
+	*/
 	int sockfd = 0, valread = 0;
-	int s, rc;
+	int dflag = 0, pflag = 0, hflag = 0, fflag = 0, iflag = 0;
+	char *dvalue = NULL, *pvalue = NULL, *hvalue = NULL, *fvalue = NULL, *ivalue = NULL;
+	int c;
+	int option_index = 0;
 
 	char command[BUF_LEN] = {0};
 	char quit[5] = "quit";
@@ -84,13 +94,56 @@ int main(int argc, char **argv)
 	char sendBuff[BUF_LEN];
 
 	pid_t pid;
-	struct sockaddr_in serv_addr;
-	struct sockaddr_un serv_addr_un;
-	struct sockaddr_storage addr;
-	struct in6_addr serv;
-	struct addrinfo hints;
-	struct addrinfo *result, *rp;
 	struct sigaction sa;
+
+	static struct option long_options[] =
+	{
+		{"domain", required_argument, 0, 'd'},
+		{"port", required_argument, 0, 'p'},
+		{"host", required_argument, 0, 'h'},
+		{"file", required_argument, 0, 'f'},
+		{"interface", required_argument, 0, 'i'},
+		{0, 0, 0 , 0}
+	};
+
+	while ((c = getopt_long(argc, argv, "d:p:h:f:i:", long_options, &option_index)) != -1) {
+		switch (c) {
+			case 0:
+				if (long_options[option_index].flag != 0){
+					break;
+				}
+				printf ("option %s", long_options[option_index].name);
+				if (optarg) {
+					printf (" with arg %s", optarg);
+				}
+				printf ("\n");
+				break;
+			case 'd':
+				dflag = 1;
+				dvalue = optarg;
+				break;
+			case 'p':
+				pflag = 1;
+				pvalue = optarg;
+				break;
+			case 'h':
+				hflag = 1;
+				hvalue = optarg;
+				break;
+			case 'f':
+				fflag = 1;
+				fvalue = optarg;
+				break;
+			case 'i':
+				iflag = 1;
+				ivalue = optarg;
+				break;
+			case '?':
+				break;
+			default:
+				abort();
+		}
+	}
 
 	sa.sa_handler = handle_write; 
 	sigemptyset(&sa.sa_mask);
@@ -100,6 +153,30 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+
+	if (dflag) {
+		printf("domain = %s\n",dvalue);
+	}
+	if (hflag) {
+		printf("host = %s\n",hvalue);
+	}
+	if (pflag) {
+		printf("port = %s\n",pvalue);
+	}
+
+	if (!strcmp(dvalue, "inet")) {
+		sockfd = inet(hvalue, pvalue);
+	}
+	else if (!strcmp(dvalue, "unix")) {
+		sockfd = unix_d(fvalue);
+	}
+	else if (!strcmp(dvalue, "interface")) {
+		sockfd = interface(ivalue, pvalue);
+	}
+
+	memset(recvBuff, '0', sizeof(recvBuff));
+	memset(sendBuff, '0', sizeof(sendBuff));
+	/*
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
@@ -142,24 +219,7 @@ int main(int argc, char **argv)
 			printf("Could not connect\n");
 			exit(EXIT_FAILURE);
 		}
-		/*
-		memset(&serv_addr, 0, sizeof(serv_addr));
 
-		if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-			printf("failed to create ip socket in cli: %d | %s \n", errno, strerror(errno));
-			exit(EXIT_FAILURE);
-		}
-
-		serv_addr.sin_family = AF_INET;
-		serv_addr.sin_addr.s_addr = inet_addr(argv[2]);
-		serv_addr.sin_port = htons(atoi(argv[3]));
-		memset(&(serv_addr.sin_zero), '\0', 8);
-
-		if ((connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) == -1){
-			printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
-			exit(EXIT_FAILURE);
-		}
-		*/
 	} 
 	else if (!strcmp(argv[1], "unix")) {
 		memset(&serv_addr_un, 0, sizeof(serv_addr_un));
@@ -179,6 +239,7 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 	}
+	*/
 	dmalloc_debug_setup("log-stats,log-non-free, check-fense, check-heap, error-abort,log=cli_logfile.log");
 
 	pid = getpid();
@@ -466,4 +527,158 @@ void remove_module()
 void read_kernel_buffer()
 {
 	system("dmesg -t | grep \"lkm_example_rand_number\" | tail -1");
+}
+
+int inet(char* host, char* port)
+{
+	int sockfd = 0, s = 0, rc = 0;
+
+	struct addrinfo hints;
+	struct addrinfo *result, *rp;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = 0;
+	hints.ai_protocol = 0;
+
+	s = getaddrinfo(host, port, &hints, &result);
+	if (s != 0) {
+		printf("getaddrinfo failed %s\n", gai_strerror(s));
+		exit(EXIT_FAILURE);
+	}
+
+	for (rp = result; rp != NULL; rp = rp->ai_next) {
+		sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+		if (sockfd == -1) {
+			continue;
+		}
+		
+		rc = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
+
+		if (rc == -1) {
+			printf("failed to connect: %d | %s \n", errno, strerror(errno));
+			close(sockfd);
+			exit(EXIT_FAILURE);
+		} else {
+			break;
+		}
+	}
+
+	freeaddrinfo(result);
+
+	if (rp == NULL) {
+		printf("Could not connect\n");
+		exit(EXIT_FAILURE);
+	}
+
+	return sockfd;
+
+}
+
+int unix_d(char* file)
+{
+	int sockfd = 0;
+
+	struct sockaddr_un serv_addr_un;
+
+	memset(&serv_addr_un, 0, sizeof(serv_addr_un));
+
+	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		printf("failed to create unix socket in cli: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	serv_addr_un.sun_family = AF_UNIX;
+	strcpy(serv_addr_un.sun_path, file);
+
+	if ((connect(sockfd, (struct sockaddr *) &serv_addr_un, sizeof(serv_addr_un))) == -1){
+		printf("connect failed in cli: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	return sockfd;
+}
+
+
+int interface(char* interface, char* port)
+{
+	int family = 0, s = 0, sockfd = 0, rc = 0;
+
+	char host[NI_MAXHOST];
+
+	struct ifaddrs *ifaddrs, *ifa;
+	struct addrinfo hints;
+	struct addrinfo *result, *rp;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = 0;
+	hints.ai_protocol = 0;
+	if (getifaddrs(&ifaddrs) == -1) {
+		printf("failed to get interface addresses: %d | %s \n", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	for (ifa = ifaddrs; ifa != NULL; ifa=ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL) {
+			continue;
+		}
+
+		if (strcmp(ifa->ifa_name, interface)) {
+			continue;
+		}
+
+		family = ifa->ifa_addr->sa_family;
+
+		if (!(family == AF_INET || family == AF_INET6)) {
+			continue;
+		}
+		
+		s = getnameinfo(ifa->ifa_addr, 
+						(family == AF_INET) ? sizeof(struct sockaddr_in) : 
+											sizeof(struct sockaddr_in6),
+											host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+											
+		if (s != 0) {
+			printf("get name info failed: %s\n", gai_strerror(s));
+		}
+		printf("address is = %s\n", host);
+		s = getaddrinfo(host, port, &hints, &result);
+		if (s != 0) {
+			printf("getaddrinfo failed %s\n", gai_strerror(s));
+			exit(EXIT_FAILURE);
+		}
+
+		for (rp = result; rp != NULL; rp = rp->ai_next) {
+			sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+
+			if (sockfd == -1) {
+				continue;
+			}
+			
+			rc = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
+
+			if (rc == -1) {
+				printf("failed to connect: %d | %s \n", errno, strerror(errno));
+				close(sockfd);
+				exit(EXIT_FAILURE);
+			} else {
+				break;
+			}
+		}
+
+		if (rp == NULL) {
+			printf("Could not connect\n");
+			exit(EXIT_FAILURE);
+		}
+
+		freeaddrinfo(result);
+		break;
+
+	}
+	freeifaddrs(ifaddrs);
+	return sockfd;
 }
