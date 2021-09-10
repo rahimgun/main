@@ -204,6 +204,10 @@ int main(int argc, char **argv)
 			}
 			free(quit[0]);
 			free(quit[1]);
+			test = read(sockfd, recvBuff, BUF_LEN);
+			if (test == -1) {
+				printf("failed to read quit message: %d | %s \n", errno, strerror(errno));
+			}
 			break;
 		}
 		send(sockfd, pid_to_send, 1024, 0);

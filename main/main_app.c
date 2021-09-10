@@ -267,7 +267,11 @@ int main(int argc, char **argv)
 					}
 					
 					if (!strcmp(ret, "yes")) {
-						close(fds[i].fd);
+						int ret = close(fds[i].fd);
+						if (ret == -1) {
+							printf("error closing to connection socket: %d | %s \n", errno, strerror(errno));
+							exit(EXIT_FAILURE);
+						}
 						fds[i].fd = -1;
 						compress_array = 1;
 					} 
@@ -1082,6 +1086,7 @@ void *handle_command(void *args)
 	char exec[9] = "cli_exec";
 	char quit[5] = "quit";
 	char unknown[16] = "unknown method\n";
+	char *quit_message = "quit";
 	char sendBuff[BUF_LEN];
 	char recvBuff[BUF_LEN];
 	ret = (char *) malloc(20);
@@ -1159,6 +1164,7 @@ void *handle_command(void *args)
 	} 
 	else if (!(result = strncmp(quit, method, 4))) {
 		strcpy(ret, "yes");
+		send(fd, quit_message, strlen(quit_message), 0);
 		//printf("quit\n");
 		//for (k = 0 ; k < size-2 ; k++) {
 		//	free(args_t[k]);
