@@ -812,7 +812,6 @@ void getParameter(char *parameter, xmlNode* a_node, int fd)
 			xmlChar* key = xmlNodeGetContent(node);
 			send(fd, key, xmlStrlen(key), 0);
 			xmlFree(key);
-
 		} else {
 			print_element_names(node, fd);
 		}
@@ -952,31 +951,31 @@ void print_element_names(xmlNode * a_node, int fd)
 	char* colon = ":";
 	xmlNode *cur_node = NULL;
 	for (cur_node = a_node; cur_node; cur_node = cur_node->next) {
-		if (cur_node->type == XML_ELEMENT_NODE) {
-			xmlChar* key = xmlNodeGetContent(cur_node->children);
-			const xmlChar* name = cur_node->name;
-			if (key != NULL) {
-				
-				if (send(fd, name, xmlStrlen(name), 0) == -1) {
-					printf("failed to send %d | %s \n", errno, strerror(errno));
-				}
-				
-				if (send(fd, colon, strlen(colon), 0) == -1) {
-					printf("failed to send %d | %s \n", errno, strerror(errno));
-				}
-				if (send(fd, key, xmlStrlen(key), 0) == -1) {
-					printf("failed to send %d | %s \n", errno, strerror(errno));
-				}
-				if (send(fd, newline, strlen(newline), 0) == -1) {
-					printf("failed to send %d | %s \n", errno, strerror(errno));
-				}
-				sleep(0.1);
-				//printf("name: %s value = %s\n", cur_node->name, key);
-			}
-			xmlFree(key);
+		
+		if (cur_node->type != XML_ELEMENT_NODE) {
+			continue;
 		}
+		
+		xmlChar* key = xmlNodeGetContent(cur_node->children);
+		const xmlChar* name = cur_node->name;
+		if (key != NULL) {
+			if (send(fd, name, xmlStrlen(name), 0) == -1) {
+				printf("failed to send %d | %s \n", errno, strerror(errno));
+			}
+			
+			if (send(fd, colon, strlen(colon), 0) == -1) {
+				printf("failed to send %d | %s \n", errno, strerror(errno));
+			}
+			if (send(fd, key, xmlStrlen(key), 0) == -1) {
+				printf("failed to send %d | %s \n", errno, strerror(errno));
+			}
+			if (send(fd, newline, strlen(newline), 0) == -1) {
+				printf("failed to send %d | %s \n", errno, strerror(errno));
+			}
+		}
+		xmlFree(key);
 		print_element_names(cur_node->children, fd);
-	}	
+	}
 }
 
 /**

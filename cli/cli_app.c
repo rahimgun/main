@@ -89,7 +89,7 @@ int main(int argc, char **argv)
 	char enable[7] = "enable";
 	char cli_print[10] = "cli_print";
 	char *token = NULL;
-	char pid_to_send[1024] = {0};
+	char pid_to_send[BUF_LEN] = {0};
 	char recvBuff[BUF_LEN];
 	char sendBuff[BUF_LEN];
 
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
 		gWrite_done = 0; /* reset gWrite_done*/
 		if (!strncmp(command,quit,4)) { /* end program when user enters quit*/
 			int test;
-			test = send(sockfd, pid_to_send, 1024, 0);
+			test = send(sockfd, pid_to_send, BUF_LEN, 0);
 			if (test == -1) {
 				printf("failed to send: %d | %s \n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
@@ -210,7 +210,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		}
-		send(sockfd, pid_to_send, 1024, 0);
+		send(sockfd, pid_to_send, BUF_LEN, 0);
 		struct params *head;
 		init("./main", &head);
 		/* it splits command by space and insert to linked list*/
@@ -270,7 +270,7 @@ int main(int argc, char **argv)
 		}
 		
 		while (!gWrite_done) {
-			valread = read(sockfd, recvBuff, BUF_LEN);
+			valread = recv(sockfd, recvBuff, BUF_LEN, MSG_WAITALL);
 			if (valread == -1) {
 				if (errno == EINTR) {/* break loop when read is interrupted*/
 					break;
