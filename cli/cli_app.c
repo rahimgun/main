@@ -152,6 +152,11 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	if (!dflag) {
+		printf("Usage: %s -d [inet | unix | interface] -p [port number] -f [file name] -h [host name]");
+		exit(EXIT_FAILURE);
+	}
+
 
 	if (!strcmp(dvalue, "inet")) {
 		sockfd = inet(hvalue, pvalue);

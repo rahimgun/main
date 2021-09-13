@@ -184,6 +184,11 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	if (!dflag) {
+		printf("Usage: %s -d [inet6 | inet4 | unix | interface] -p [port number] -f [file name] -h [host name]");
+		exit(EXIT_FAILURE);
+	}
+
 	pthread_mutex_init(&mutexsave, NULL);
 
 	memset(sendBuff, '0', sizeof(sendBuff));
@@ -1084,11 +1089,12 @@ void *handle_command(void *args)
 	int fd = t_fd->t_fd;
 	int valread;
 	int result;
+	int k = 0;
 	double cpu_time_used;
 
 	xmlDoc* doc = t_fd->doc;
 	xmlNode* root_element = t_fd->node;
-	clock_t start, finish;
+
 	char *ret;
 	char set[8] = "cli_set";
 	char get[8] = "cli_get";
@@ -1099,8 +1105,12 @@ void *handle_command(void *args)
 	char *quit_message = "quit";
 	char sendBuff[BUF_LEN];
 	char recvBuff[BUF_LEN];
+
+	clock_t start, finish;
+
 	ret = (char *) malloc(20);
 	strcpy(ret, "no");
+
 	start = clock();
 	valread = read(fd, recvBuff, BUF_LEN);
 	if (valread == -1) {
@@ -1114,22 +1124,26 @@ void *handle_command(void *args)
 		printf("cannot receive pid of cli\n");
 		exit(EXIT_FAILURE);
 	}
+
 	valread = read(fd, recvBuff, BUF_LEN);
 	if (valread == -1) {
 		printf("failed to read size: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	int k = 0;
+	
 	int size = atoi(recvBuff);
 	memset(recvBuff, 0, BUF_LEN);
 	printf("size = %d\n",size);
+
 	valread = read(fd, recvBuff, BUF_LEN);
 	if (valread == -1) {
 		printf("failed to read method: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+
 	char* method = (char *) malloc(valread);
 	strncpy(method, recvBuff, valread);
+
 	memset(recvBuff, 0, BUF_LEN);
 	char* args_t[size - 2];
 	printf("method = %s\n", method);
@@ -1153,39 +1167,26 @@ void *handle_command(void *args)
 			setParameter(args_t[0], "", root_element, doc, fd);
 		}
 	
-		//setParameter(args_t[0], args_t[1], root_element, doc, fd);
 		kill(cli_pid, SIGUSR1);
-		//break;
 	}
 	else if (!(result = strncmp(get, method, 7))) {
 		getParameter(args_t[0], root_element, fd);
 		kill(cli_pid, SIGUSR1);
-		//break;
 	}
 	else if (!(result = strncmp(run, method, 7))) {
 		exec_command(args_t, fd, size-2);
 		kill(cli_pid, SIGUSR1);
-		//break;
 	}
 	else if (!(result = strncmp(exec, method, 7))) {
 		exec_command(args_t, fd, size-2);
 		kill(cli_pid, SIGUSR1);
-		//break;
 	} 
 	else if (!(result = strncmp(quit, method, 4))) {
 		strcpy(ret, "yes");
 		send(fd, quit_message, strlen(quit_message), 0);
-		//printf("quit\n");
-		//for (k = 0 ; k < size-2 ; k++) {
-		//	free(args_t[k]);
-		//}
-		//free(method);
-		//memset(recvBuff, 0, BUF_LEN);
-		//break;
 	} else {
 		send(fd, unknown, strlen(unknown), 0);
-		kill(cli_pid, SIGUSR1);
-		//break;
+		kill(cli_pid, SIGUSR1);	
 	}
 	for (k = 0 ; k < size-2 ; k++) {
 		free(args_t[k]);
@@ -1195,14 +1196,6 @@ void *handle_command(void *args)
 	printf("command took %f seconds\n", cpu_time_used);
 	free(method);
 	memset(recvBuff, 0, BUF_LEN);
-	//} while (1);
-	//printf("test-else %d\n", close_conn);
-	/*
-	if (close_conn) {
-		close(fds[i].fd);
-		fds[i].fd = -1;
-		compress_array = 1;
-	}
-	*/
+
 	pthread_exit(ret);
 }
