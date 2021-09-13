@@ -36,9 +36,9 @@
 #include <libxml/tree.h>
 #include <libxml/xmlreader.h>
 
-#define BUF_LEN 1024
-#define BACKLOG 10
-#define MAX_CLIENT 100
+#define BUF_LEN 1024 /**< send and recv buffer*/
+#define BACKLOG 10 /**< queue for accepting connection*/
+#define MAX_CLIENT 100 /**< maximum connection for poll*/
 
 /**
  * @struct fd
@@ -66,7 +66,7 @@ int isNumber(char* value);
 int isIPAddress(char* value);
 int isHostname(char* value);
 
-pthread_mutex_t mutexsave;
+pthread_mutex_t mutexsave; /**< mutex lock for saving xml document*/
 
 /**
  * @brief calls corresponding functions for methods.
@@ -455,8 +455,8 @@ int inet4(char* host, char* port)
  * 
  * It creates a unix socket and a unix socket address struct with given path name.
  * Then it binds socket to address.
- * 
- * @param file pathname 
+ *
+ * @param file pathname
  * @return int socket fd
  */
 int unix_d(char* file)
@@ -493,7 +493,7 @@ int unix_d(char* file)
 	}
 
 	if (listen(listenfd, BACKLOG) == -1) {
-		printf("failed to listen in main(unix): %d | %s \n", errno, strerror(errno));
+		printf("failed to listen(unix): %d | %s \n", errno, strerror(errno));
 		close(listenfd);
 		exit(EXIT_FAILURE);
 	}
@@ -598,15 +598,26 @@ int interface(char* interface, char* port)
 			}
 
 		}
+		freeaddrinfo(result_addr);
+
+		if (rp == NULL) {
+			printf("Could not bind\n");
+			exit(EXIT_FAILURE);
+		}
+
 		if (listen(listenfd, BACKLOG) == -1) {
 			printf("failed to listen in main: %d | %s \n", errno, strerror(errno));
 			close(listenfd);
 			exit(EXIT_FAILURE);
 		}
-		freeaddrinfo(result_addr);
 		break;
 	}
 	freeifaddrs(ifaddrs);
+
+	if (ifa == NULL) {
+		printf("could not find interface\n");
+		exit(EXIT_FAILURE);
+	}
 	return listenfd;
 }
 

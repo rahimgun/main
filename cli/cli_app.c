@@ -26,9 +26,8 @@
 #include <arpa/inet.h>
 #include <dmalloc.h>
 
-#define STR_LEN 100
-#define BUF_LEN 1024
-#define BACKLOG 10
+#define STR_LEN 100 /**< size of command or option*/
+#define BUF_LEN 1024 /**< send and recv buffer length*/
 
 /**
  * @struct params 
@@ -38,8 +37,8 @@
  * 
  */
 struct params{
-	char param[STR_LEN];
-	struct params *next;
+	char param[STR_LEN]; /**< method name or options*/
+	struct params *next; /**< next item in the list */
 };
 
 int inet(char* host, char* port);
@@ -54,7 +53,7 @@ void insert_module();
 void remove_module();
 void read_kernel_buffer();
 
-volatile sig_atomic_t gWrite_done = 0;
+volatile sig_atomic_t gWrite_done = 0; /**< indicates main app send writing is done*/
 
 /**
  * @brief get commands from user and redirect them to main app.
@@ -177,7 +176,7 @@ int main(int argc, char **argv)
 
 	//str = fgets(command,1000,stdin);
 
-	while (fgets(command,BUF_LEN,stdin)) {
+	while (fgets(command, BUF_LEN, stdin)) {
 		
 		gWrite_done = 0; /* reset gWrite_done*/
 		if (!strncmp(command,quit,4)) { /* end program when user enters quit*/
