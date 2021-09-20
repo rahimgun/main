@@ -48,7 +48,7 @@ void insert(char *param, struct params **head);
 void init(char *param, struct params **head);
 void free_list(struct params **head);
 int list_len(struct params **head);
-void handle_write(int signum);
+void handle_write();
 void insert_module();
 void remove_module();
 void read_kernel_buffer();
@@ -84,9 +84,9 @@ int main(int argc, char **argv)
 	int option_index = 0;
 
 	char command[BUF_LEN] = {0};
-	char quit[5] = "quit";
-	char enable[7] = "enable";
-	char cli_print[10] = "cli_print";
+	const char *quit = NULL;
+	const char *enable = NULL;
+	const char *cli_print = NULL;
 	char *token = NULL;
 	char pid_to_send[BUF_LEN] = {0};
 	char recvBuff[BUF_LEN];
@@ -94,6 +94,10 @@ int main(int argc, char **argv)
 
 	pid_t pid;
 	struct sigaction sa;
+
+	quit = "quit";
+	enable = "enable";
+	cli_print = "cli_print";
 
 	static struct option long_options[] =
 	{
@@ -153,7 +157,7 @@ int main(int argc, char **argv)
 	}
 
 	if (!dflag) {
-		printf("Usage: %s -d [inet | unix | interface] -p [port number] -f [file name] -h [host name]");
+		printf("Usage: %s -d [inet | unix | interface] -p [port number] -f [file name] -h [host name]", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
@@ -166,6 +170,9 @@ int main(int argc, char **argv)
 	}
 	else if (!strcmp(dvalue, "interface")) {
 		sockfd = interface(ivalue, pvalue);
+	} else {
+		printf("unknown domain");
+		exit(EXIT_FAILURE);
 	}
 
 	memset(recvBuff, '0', sizeof(recvBuff));
@@ -179,7 +186,6 @@ int main(int argc, char **argv)
 	printf("Write quit to terminate\n");
 	printf("#>");
 
-	//str = fgets(command,1000,stdin);
 
 	while (fgets(command, BUF_LEN, stdin)) {
 		
@@ -191,23 +197,23 @@ int main(int argc, char **argv)
 				printf("failed to send: %d | %s \n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
 			}
-			char* quit[2];
-			quit[0] = (char *) malloc(STR_LEN);
-			quit[1] = (char *) malloc(STR_LEN);
-			strcpy(quit[0], "2");
-			strcpy(quit[1], "quit");
-			test = send(sockfd, quit[0], BUF_LEN, 0);
+			char* quit_a[2];
+			quit_a[0] = (char *) malloc(STR_LEN);
+			quit_a[1] = (char *) malloc(STR_LEN);
+			strcpy(quit_a[0], "2");
+			strcpy(quit_a[1], "quit");
+			test = send(sockfd, quit_a[0], BUF_LEN, 0);
 			if (test == -1) {
 				printf("failed to send: %d | %s \n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
 			}
-			test = send(sockfd, quit[1], BUF_LEN, 0);
+			test = send(sockfd, quit_a[1], BUF_LEN, 0);
 			if (test == -1) {
 				printf("failed to send: %d | %s \n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
 			}
-			free(quit[0]);
-			free(quit[1]);
+			free(quit_a[0]);
+			free(quit_a[1]);
 			test = read(sockfd, recvBuff, BUF_LEN);
 			if (test == -1) {
 				printf("failed to read quit message: %d | %s \n", errno, strerror(errno));
@@ -216,7 +222,7 @@ int main(int argc, char **argv)
 		}
 		send(sockfd, pid_to_send, BUF_LEN, 0);
 		struct params *head;
-		init("./main", &head);
+		init("./main", &head); // init linked list with dummy node
 		/* it splits command by space and insert to linked list*/
 		token = strtok(command, " ");
 		while ( token != NULL ) {
@@ -227,7 +233,7 @@ int main(int argc, char **argv)
 		int len = list_len(&head);
 		char* args[len];
 		int i = 0;
-
+		//copy linked list to array
 		while (current != NULL) {
 			args[i] = (char *) malloc(STR_LEN);
 			strcpy(args[i], current->param);
@@ -244,11 +250,14 @@ int main(int argc, char **argv)
 		/* call insert or remove module function when user enters enable*/
 		int k = 0;
 		if (strncmp(enable, args[1], 7) == 0) {
-			if (atoi(args[2]) == 1) {
+			if (strtol(args[0], NULL, 10) == 1) {
 				insert_module();
 			}
-			else if (atoi(args[2]) == 0) {
+			else if (strtol(args[1], NULL, 10) == 0) {
 				remove_module();
+			} else {
+				printf("unsupported option\n");
+				exit(EXIT_FAILURE);
 			}
 			printf("#>>");
 			for (k = 0 ; k < len ; k++) {
@@ -269,7 +278,6 @@ int main(int argc, char **argv)
 		}
 
 		for (k = 0 ; k < len ; k++) {
-			//printf("%s = %d \n", args[k], strlen(args[k]));
 			send(sockfd, args[k], BUF_LEN, 0);
 		}
 		
@@ -299,9 +307,9 @@ int main(int argc, char **argv)
 		}
 		free_list(&head);
 		printf("#>");
-		//str = fgets(command,1000,stdin);
+		
 	}
-	///sleep(1);
+	
 	
 	if (close(sockfd) == -1) {
 		printf("error: %d | %s \n", errno, strerror(errno));
@@ -398,7 +406,7 @@ int list_len(struct params **head)
  * 
  * @param signum 
  */
-void handle_write(int signum)
+void handle_write()
 {
 	gWrite_done = 1;
 }
@@ -538,8 +546,8 @@ int unix_d(char* file)
 	struct sockaddr_un serv_addr_un;
 
 	memset(&serv_addr_un, 0, sizeof(serv_addr_un));
-
-	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (sockfd == -1) {
 		printf("failed to create unix socket in cli: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
@@ -569,6 +577,7 @@ int unix_d(char* file)
 int interface(char* interface, char* port)
 {
 	int family = 0, s = 0, sockfd = 0, rc = 0;
+	int domain = AF_INET6;
 
 	char host[NI_MAXHOST];
 
@@ -592,12 +601,16 @@ int interface(char* interface, char* port)
 		}
 
 		if (strcmp(ifa->ifa_name, interface)) {
+			if (ifa->ifa_next == NULL) {
+				domain = AF_INET;
+				ifa = ifaddrs;
+			}
 			continue;
 		}
 
 		family = ifa->ifa_addr->sa_family;
 
-		if (!(family == AF_INET || family == AF_INET6)) {
+		if (!(family == domain)) {
 			continue;
 		}
 		

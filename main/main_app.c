@@ -60,7 +60,7 @@ int interface(char* interface, char* port);
 int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int fd);
 void getParameter(char *parameter, xmlNode* a_node, int fd);
 void run_command(char *command[], int fd, int size);
-void exec_command(char *command[], int fd, int size);
+void exec_command(char *command[], int fd);
 void print_element_names(xmlNode* a_node, int fd);
 int isNumber(char* value);
 int isIPAddress(char* value);
@@ -97,22 +97,19 @@ int main(int argc, char **argv)
 	dmalloc_debug_setup("log-stats, log-non-free, check-fense, check-heap, error-abort,log=main_logfile.log");
 	int result = 0, rc = 0;
 	int dflag = 0, pflag = 0, hflag = 0, fflag = 0, iflag = 0;
-	int index, c;
+	int c;
 	int option_index = 0;
 	int listenfd = 0, new_conn = -1;
-	int structsize = 0;
+	unsigned int structsize = 0;
 	int timeout, nfds = 1, current_size = 0;
 	int END_SERVER = 0, close_conn = 0, compress_array = 0;
-	double cpu_time_used;
 
 	char sendBuff[BUF_LEN];
 	char recvBuff[BUF_LEN];
-	char client_addr[INET6_ADDRSTRLEN];
-	char host[NI_MAXHOST];
-	char* docname;
+
+	const char* docname;
 	char *dvalue = NULL, *pvalue = NULL, *hvalue = NULL, *fvalue = NULL, *ivalue = NULL;
 
-	clock_t start, finish;
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
 
@@ -185,11 +182,15 @@ int main(int argc, char **argv)
 	}
 
 	if (!dflag) {
-		printf("Usage: %s -d [inet6 | inet4 | unix | interface] -p [port number] -f [file name] -h [host name]");
+		printf("Usage: %s -d [inet6 | inet4 | unix | interface] -p [port number] -f [file name] -h [host name]", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
-	pthread_mutex_init(&mutexsave, NULL);
+	rc = pthread_mutex_init(&mutexsave, NULL);
+	if (rc) {
+		printf("failed to init mutex: %d | %s", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 
 	memset(sendBuff, '0', sizeof(sendBuff));
 	memset(recvBuff, '0', sizeof(recvBuff));
@@ -205,6 +206,9 @@ int main(int argc, char **argv)
 	}
 	else if (!strcmp(dvalue, "interface")) {
 		listenfd = interface(ivalue, pvalue);
+	} else {
+		printf("unknown domain");
+		exit(EXIT_FAILURE);
 	}
 	
 	memset(fds, 0, sizeof(fds));
@@ -241,7 +245,6 @@ int main(int argc, char **argv)
 
 			if (fds[i].fd == listenfd) {
 				do {
-					//new_conn = accept(listenfd, NULL, NULL);
 					new_conn = accept(listenfd, (struct sockaddr *) &addr, &structsize);
 					if (new_conn < 0) {
 						if (errno != EWOULDBLOCK) {
@@ -253,7 +256,7 @@ int main(int argc, char **argv)
 					printf("new connection with fd = %d\n", new_conn);
 					fds[nfds].fd = new_conn;
 					fds[nfds].events = POLLIN;
-					nfds++;
+					nfds++; //increase poll size with new connection
 				} while(new_conn != -1);
 			} else {
 					pthread_t thread;
@@ -271,9 +274,9 @@ int main(int argc, char **argv)
 						exit(EXIT_FAILURE);
 					}
 					
-					if (!strcmp(ret, "yes")) {
-						int ret = close(fds[i].fd);
-						if (ret == -1) {
+					if (!strcmp(ret, "yes")) { //if method is quit thread returns yes to remove from poll
+						rc = close(fds[i].fd);
+						if (rc == -1) {
 							printf("error closing to connection socket: %d | %s \n", errno, strerror(errno));
 							exit(EXIT_FAILURE);
 						}
@@ -303,7 +306,11 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	pthread_mutex_destroy(&mutexsave);
+	rc = pthread_mutex_destroy(&mutexsave);
+	if (rc) {
+		printf("failed to destroy mutex: %d | %s", errno, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
 	xmlFreeDoc(doc);
 	xmlCleanupParser();
 	dmalloc_shutdown();
@@ -364,7 +371,11 @@ int inet6(char* port) {
 			break;
 		}
 
-		close(listenfd);
+		rc = close(listenfd);
+		if (rc == -1) {
+			printf("failed to close listenfd %d | %s\n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	freeaddrinfo(result_addr);
@@ -437,7 +448,11 @@ int inet4(char* host, char* port)
 			break;
 		}
 
-		close(listenfd);
+		rc = close(listenfd);
+		if (rc == -1) {
+			printf("failed to close listenfd: %d | %s\n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	freeaddrinfo(result_addr);
@@ -521,6 +536,7 @@ int unix_d(char* file)
 int interface(char* interface, char* port)
 {
 	int family = 0, s = 0, listenfd = 0, rc = 0, en = 1;
+	int domain = AF_INET6;
 
 	char host[NI_MAXHOST];
 
@@ -539,17 +555,22 @@ int interface(char* interface, char* port)
 	}
 
 	for (ifa = ifaddrs; ifa != NULL; ifa=ifa->ifa_next) {
+		
 		if (ifa->ifa_addr == NULL) {
 			continue;
 		}
-
+		
 		if (strcmp(ifa->ifa_name, interface)) {
+			if (ifa->ifa_next == NULL) {
+				domain = AF_INET;
+				ifa = ifaddrs;
+			}
 			continue;
 		}
 
 		family = ifa->ifa_addr->sa_family;
 
-		if (!(family == AF_INET || family == AF_INET6)) {
+		if (!(family == domain)) {
 			continue;
 		}
 		
@@ -565,7 +586,7 @@ int interface(char* interface, char* port)
 		s = getaddrinfo(host, port, &hints, &result_addr);
 
 		if (s != 0) {
-			printf("get addr info failed: \n", gai_strerror(s));
+			printf("get addr info failed: %s\n", gai_strerror(s));
 		}
 
 		for (rp = result_addr; rp != NULL; rp = rp->ai_next) {
@@ -647,12 +668,9 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 
 	char* test = parameter;
 	char* token = NULL;
-	char* temp = NULL;
-	char* invalid = NULL;
-	char* set = NULL;
-	char* notFound = NULL;
-	char* newValue = NULL;
-	xmlChar* key = NULL;
+	const char* invalid = NULL;
+	const char* set = NULL;
+	const char* notFound = NULL;
 	xmlChar* type = NULL;
 	xmlNode* node = a_node;
 
@@ -685,7 +703,7 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 		node = node->children;
 		token = strtok(NULL, ".");
 	}
-	type = xmlGetProp(node->parent, "type");
+	type = xmlGetProp(node->parent, (const xmlChar*) "type");
 	if (!xmlStrcmp(type, (const xmlChar*) "boolean")) {
 		if (!strcmp("true", value) || !strcmp("false", value)) {
 			ret = pthread_mutex_lock(&mutexsave);
@@ -725,7 +743,7 @@ int setParameter(char *parameter, char* value, xmlNode* a_node, xmlDoc* doc, int
 		}
 	} 
 	else if (!xmlStrcmp(type, (const xmlChar*) "string")) {
-		xmlChar* syntax = xmlGetProp(node->parent, "syntax");
+		xmlChar* syntax = xmlGetProp(node->parent, (const xmlChar*)"syntax");
 		if (syntax != NULL) {
 			if (!xmlStrcmp(syntax, (const xmlChar*) "IPAddress")) {
 				if (isIPAddress(value) || isHostname(value)){
@@ -791,10 +809,10 @@ void getParameter(char *parameter, xmlNode* a_node, int fd)
 {
 	int flag = 1;
 	char* token = NULL;
-	char* invalid = "parameter is not found\n";
-	xmlChar* key = NULL;
+	const char* invalid = NULL;
 	xmlNode* node = a_node;
 
+	invalid = "parameter is not found\n";
 	token = strtok(parameter, ".");
 	while (token != NULL) {
 		if (node->type != XML_ELEMENT_NODE) {
@@ -843,10 +861,9 @@ void getParameter(char *parameter, xmlNode* a_node, int fd)
 void run_command(char *command[], int fd, int size)
 {
 	int link[2] = {0};
+	int rc = 0;
 	int nbytes = 0;
-	int i = 0;
 	char output[4096] = {0};
-	char *temp = NULL;
 	pid_t pid;
 	command[size] = NULL;
 	
@@ -878,7 +895,11 @@ void run_command(char *command[], int fd, int size)
 			printf("error: %d | %s \n", errno, strerror(errno));
 			exit(EXIT_FAILURE);
 		}
-		execvp(command[0],command);
+		rc = execvp(command[0],command);
+		if (rc == -1) {
+			printf("eexcvp failed: %d | %s \n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	} else {
 		if (close(link[1]) == -1) {
 			printf("error: %d | %s \n", errno, strerror(errno));
@@ -903,15 +924,13 @@ void run_command(char *command[], int fd, int size)
  * @param fd socket fd to write command' result
  * @param size counf of the command and options in command[]
  */
-void exec_command(char *command[], int fd, int size)
+void exec_command(char *command[], int fd)
 {
 	int link[2] = {0};
+	int rc = 0;
 	int nbytes = 0;
-	int i = 0;
 	char output[4096] = {0};
-	char *temp = NULL;
 	
-	command[size] = NULL;
 	pid_t pid;
 
 	if (pipe(link) == -1) {
@@ -940,7 +959,11 @@ void exec_command(char *command[], int fd, int size)
 			printf("error: %d | %s \n", errno, strerror(errno));
 			exit(EXIT_FAILURE);
 		}
-		execvp(command[0], command);
+		rc = execvp(command[0], command);
+		if (rc == -1) {
+			printf("execvp failed: %d | %s\n", errno, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	} else {
 		if (close(link[1]) == -1) {
 			printf("error: %d | %s \n", errno, strerror(errno));
@@ -963,9 +986,12 @@ void exec_command(char *command[], int fd, int size)
  */
 void print_element_names(xmlNode * a_node, int fd)
 {
-	char* newline = "\n";
-	char* colon = ":";
+	const char* newline = NULL;
+	const char* colon = NULL;
 	xmlNode *cur_node = NULL;
+
+	newline = "\n";
+	colon = ":";
 	for (cur_node = a_node; cur_node; cur_node = cur_node->next) {
 		
 		if (cur_node->type != XML_ELEMENT_NODE) {
@@ -1051,7 +1077,7 @@ int isHostname(char *value)
 {
 	regex_t regex;
 	int reti = 0;
-	char* reg = "^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$";
+	const char* reg = "^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$";
 	reti = regcomp(&regex, reg, REG_EXTENDED|REG_NOSUB);
 	
 	if (reti) {
@@ -1084,30 +1110,36 @@ int isHostname(char *value)
  */
 void *handle_command(void *args)
 {
-	printf("thread id = %u \n", pthread_self());
+	printf("thread id = %lu \n", pthread_self());
 	struct fd *t_fd = (struct fd*) args;
+
 	int fd = t_fd->t_fd;
-	int valread;
-	int result;
+	int valread = 0;
 	int k = 0;
+	int size = 0;
 	double cpu_time_used;
+
+	char *ret = NULL;
+	const char *set = NULL;
+	const char *get = NULL;
+	const char *run = NULL;
+	const char *exec = NULL;
+	const char *quit = NULL;
+	const char *unknown = NULL;
+	const char *quit_message = NULL;
+	char recvBuff[BUF_LEN] = {0};
 
 	xmlDoc* doc = t_fd->doc;
 	xmlNode* root_element = t_fd->node;
-
-	char *ret;
-	char set[8] = "cli_set";
-	char get[8] = "cli_get";
-	char run[8] = "cli_run";
-	char exec[9] = "cli_exec";
-	char quit[5] = "quit";
-	char unknown[16] = "unknown method\n";
-	char *quit_message = "quit";
-	char sendBuff[BUF_LEN];
-	char recvBuff[BUF_LEN];
-
 	clock_t start, finish;
 
+	set = "cli_set";
+	get = "cli_get";
+	run = "cli_run";
+	exec = "cli_exec";
+	quit = "quit";
+	unknown = "unknown method\n";
+	quit_message = "quit";
 	ret = (char *) malloc(20);
 	strcpy(ret, "no");
 
@@ -1117,7 +1149,7 @@ void *handle_command(void *args)
 		printf("failed to read cli pid: %d | %s \n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	pid_t cli_pid = atoi(recvBuff);
+	pid_t cli_pid = strtol(recvBuff, NULL, 10);
 	memset(recvBuff, 0, BUF_LEN);
 	printf("pid = %d\n", cli_pid);
 	if (cli_pid == -1) {
@@ -1131,7 +1163,7 @@ void *handle_command(void *args)
 		exit(EXIT_FAILURE);
 	}
 	
-	int size = atoi(recvBuff);
+	size = strtol(recvBuff, NULL, 10);
 	memset(recvBuff, 0, BUF_LEN);
 	printf("size = %d\n",size);
 
@@ -1145,7 +1177,7 @@ void *handle_command(void *args)
 	strncpy(method, recvBuff, valread);
 
 	memset(recvBuff, 0, BUF_LEN);
-	char* args_t[size - 2];
+	char* args_t[size - 1];
 	printf("method = %s\n", method);
 	for (k = 0 ; k < size - 2; k++) {
 		valread = read(fd, recvBuff, BUF_LEN);
@@ -1156,10 +1188,11 @@ void *handle_command(void *args)
 		args_t[k] = (char *) malloc(valread);
 		strcpy(args_t[k],recvBuff);
 		memset(recvBuff, 0, BUF_LEN);
-		//printf("args = %s\n",args[k]);
+		printf("args = %s\n",args_t[k]);
 	}
+	args_t[size - 2] = NULL; // put null for exec call
 	
-	if (!(result = strncmp(set, method, 7))) {
+	if (!(strncmp(set, method, 7))) {
 		
 		if (size - 2 == 2) {
 			setParameter(args_t[0], args_t[1], root_element, doc, fd);
@@ -1169,26 +1202,26 @@ void *handle_command(void *args)
 	
 		kill(cli_pid, SIGUSR1);
 	}
-	else if (!(result = strncmp(get, method, 7))) {
+	else if (!(strncmp(get, method, 7))) {
 		getParameter(args_t[0], root_element, fd);
 		kill(cli_pid, SIGUSR1);
 	}
-	else if (!(result = strncmp(run, method, 7))) {
-		exec_command(args_t, fd, size-2);
+	else if (!(strncmp(run, method, 7))) {
+		exec_command(args_t, fd);
 		kill(cli_pid, SIGUSR1);
 	}
-	else if (!(result = strncmp(exec, method, 7))) {
-		exec_command(args_t, fd, size-2);
+	else if (!(strncmp(exec, method, 7))) {
+		exec_command(args_t, fd);
 		kill(cli_pid, SIGUSR1);
 	} 
-	else if (!(result = strncmp(quit, method, 4))) {
+	else if (!(strncmp(quit, method, 4))) {
 		strcpy(ret, "yes");
 		send(fd, quit_message, strlen(quit_message), 0);
 	} else {
 		send(fd, unknown, strlen(unknown), 0);
 		kill(cli_pid, SIGUSR1);	
 	}
-	for (k = 0 ; k < size-2 ; k++) {
+	for (k = 0 ; k < size-1 ; k++) {
 		free(args_t[k]);
 	}
 	finish = clock();
